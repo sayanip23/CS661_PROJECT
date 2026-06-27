@@ -1,0 +1,140 @@
+/* ================================
+   GENERAL
+================================ */
+
+body{
+    background:#F8FAFC;
+    font-family:Segoe UI, sans-serif;
+}
+
+/* ================================
+   NAVBAR
+================================ */
+
+.navbar-custom{
+
+    background:#0F172A !important;
+
+    height: 60px;
+
+    box-shadow:0 3px 12px rgba(0,0,0,.15);
+
+}
+
+.navbar-title{
+
+    font-size:28px;
+
+    font-weight:700;
+
+}
+
+.navbar-subtitle{
+
+    color:white;
+
+    font-size:20px;
+
+}
+
+/* ================================
+   SIDEBAR
+================================ */
+
+.sidebar{
+
+    position:fixed;
+
+    top:60px;
+
+    left:0;
+
+    width: 260px;
+
+    bottom:0;
+
+    background:#1E293B;
+
+    color:white;
+
+    padding:25px;
+
+    overflow-y:auto;
+
+}
+
+.sidebar-title{
+
+    color:#059669;
+
+    text-align:center;
+
+    font-weight:bold;
+
+}
+
+.sidebar-subtitle{
+
+    text-align:center;
+
+    color:#CBD5E1;
+
+    font-size:18px;
+
+}
+
+.sidebar hr{
+
+    border-color:#475569;
+
+}
+
+.sidebar label{
+
+    color:white;
+
+}
+
+/* ================================
+   NAVIGATION
+================================ */
+
+.nav-link-custom{
+
+    color:white !important;
+
+    margin-bottom:8px;
+
+    border-radius:8px;
+
+    padding:12px;
+
+    font-size:17px;
+
+}
+
+.nav-link-custom:hover{
+
+    background:#334155;
+
+}
+
+.nav-pills .nav-link.active{
+
+    background:#10B981 !important;
+
+}
+
+/* ================================
+   CONTENT
+================================ */
+
+.content{
+
+    margin-left: 280px;
+
+    margin-top:90px;
+
+    padding:35px;
+
+}
