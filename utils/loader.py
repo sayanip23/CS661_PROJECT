@@ -25,11 +25,16 @@ def load_all_data(raw_data_path):
 
         company_name = file.replace(".csv", "")
 
+        # Warn if the CSV has no data
+        if df.empty:
+          print(f"Warning: {company_name}.csv contains no data.")
+
         df["Company"] = company_name
 
         df["Symbol"] = company_name
 
         all_data.append(df)
+
     
     master_df = pd.concat(all_data, ignore_index=True)
 
@@ -131,3 +136,31 @@ def get_dataset_summary(master_df):
 
     return summary
 # ------------------------------------------------
+# ------------------------------------------------
+
+if __name__ == "__main__":
+
+    master_df = load_all_data("data/raw")
+
+    master_df = merge_metadata(
+        master_df,
+        "data/raw/stock_metadata.csv"
+    )
+
+    master_df = sort_data(master_df)
+
+    master_df = reorder_columns(master_df)
+
+    save_processed_data(
+        master_df,
+        "data/processed/master_stock_data.csv"
+    )
+
+    summary = get_dataset_summary(master_df)
+
+    print("\nDataset Summary\n")
+
+    for key, value in summary.items():
+        print(f"{key}: {value}")
+
+    
