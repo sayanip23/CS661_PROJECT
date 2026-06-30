@@ -6,6 +6,19 @@ from components.hero import create_hero
 from components.cards import create_stat_card
 from components.feature_card import create_feature_card
 from components.workflow import create_workflow
+from data.data_manager import df
+
+# ============================
+# Dashboard Statistics
+# ============================
+
+num_stocks = df["Company"].nunique()
+
+num_sectors = df["Sector"].nunique()
+
+num_years = df["Date"].dt.year.nunique()
+
+num_records = len(df)
 
 dash.register_page(__name__, path="/")
 
@@ -19,7 +32,7 @@ layout = dbc.Container(
 
         create_hero(),
 
-        html.Br(),
+        
 
         # ============================================================
         # Dashboard Statistics
@@ -37,7 +50,7 @@ layout = dbc.Container(
                 dbc.Col(
                     create_stat_card(
                         "Stocks",
-                        "50",
+                        str(num_stocks),
                         "bi bi-graph-up-arrow",
                         "success"
                     ),
@@ -47,7 +60,7 @@ layout = dbc.Container(
                 dbc.Col(
                     create_stat_card(
                         "Sectors",
-                        "--",
+                        str(num_sectors),
                         "bi bi-building",
                         "primary"
                     ),
@@ -57,7 +70,7 @@ layout = dbc.Container(
                 dbc.Col(
                     create_stat_card(
                         "Years",
-                        "--",
+                        str(num_years),
                         "bi bi-calendar3",
                         "warning"
                     ),
@@ -67,7 +80,7 @@ layout = dbc.Container(
                 dbc.Col(
                     create_stat_card(
                         "Records",
-                        "--",
+                        str(num_records),
                         "bi bi-database",
                         "danger"
                     ),
@@ -76,170 +89,23 @@ layout = dbc.Container(
 
             ],
 
-            className="mb-5"
+            className="mb-3"
 
         ),
 
-        # ============================================================
-        # Available Analytics
-        # ============================================================
-
-        html.H3(
-            "Available Analysis Modules",
-            className="fw-bold mb-4"
-        ),
-
-        dbc.Row(
-
+        dbc.Alert(
             [
-
-                dbc.Col(
-
-                    create_feature_card(
-
-                        "Correlation Heatmap",
-
-                        "Explore relationships between NIFTY-50 stocks using daily return correlations.",
-
-                        "bi bi-grid-3x3-gap-fill",
-
-                        "/correlation"
-
-                    ),
-
-                    md=4,
-
-                    className="mb-4"
-
-                ),
-
-                dbc.Col(
-
-                    create_feature_card(
-
-                        "Risk vs Return",
-
-                        "Compare expected return and volatility across companies.",
-
-                        "bi bi-bar-chart-fill",
-
-                        "/risk_return"
-
-                    ),
-
-                    md=4,
-
-                    className="mb-4"
-
-                ),
-
-                dbc.Col(
-
-                    create_feature_card(
-
-                        "Market Shock",
-
-                        "Identify abnormal movements and significant market events.",
-
-                        "bi bi-lightning-fill",
-
-                        "/market_shock"
-
-                    ),
-
-                    md=4,
-
-                    className="mb-4"
-
-                ),
-
-            ]
-
-        ),
-
-        dbc.Row(
-
-            [
-
-                dbc.Col(
-
-                    create_feature_card(
-
-                        "Sector Rotation",
-
-                        "Analyze how sectors outperform or underperform over time.",
-
-                        "bi bi-arrow-repeat",
-
-                        "/sector_rotation"
-
-                    ),
-
-                    md=6,
-
-                    className="mb-4"
-
-                ),
-
-                dbc.Col(
-
-                    create_feature_card(
-
-                        "Sector Treemap",
-
-                        "Visualize sector-wise distribution and overall performance.",
-
-                        "bi bi-diagram-3-fill",
-
-                        "/treemap"
-
-                    ),
-
-                    md=6,
-
-                    className="mb-4"
-
-                ),
-
-            ]
-
-        ),
-
-        # ============================================================
-        # Workflow
-        # ============================================================
-
-        html.H3(
-            "Project Workflow",
-            className="fw-bold mb-4 mt-3"
-        ),
-
-        create_workflow(),
-
-        html.Br(),
-
-        # ============================================================
-        # Footer
-        # ============================================================
-
-        html.Hr(),
-
-        html.Div(
-
-            [
-
-                html.H5(
-                    "CS661 • Visual Analytics Course Project",
-                    className="text-center"
-                ),
-
-                html.P(
-                    "Department of Computer Science and Engineering • IIT Kanpur",
-                    className="text-center text-muted"
-                )
-
-            ]
-
+                html.I(className="bi bi-info-circle-fill me-2"),
+                html.B("Dataset Note: "),
+                "Historical trading data for ",
+                html.B("Infratel"),
+                " was unavailable in the collected dataset. "
+                "Therefore, all visualizations and analyses are based on ",
+                html.B("49 companies"),
+                " instead of the complete NIFTY-50."
+            ],
+          color="light",
+          className="shadow-sm border-start border-4 border-primary mt-2 mb-4",
         )
 
     ],

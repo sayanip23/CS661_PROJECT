@@ -4,6 +4,31 @@
 
 from dash import html, dcc
 import dash_bootstrap_components as dbc
+from data.data_manager import df
+
+date_options = [
+    {
+        "label": d.strftime("%d-%b-%Y"),
+        "value": d.strftime("%Y-%m-%d")
+    }
+    for d in sorted(df["Date"].unique())
+]
+
+sector_options = [
+    {
+        "label": s,
+        "value": s
+    }
+    for s in sorted(df["Sector"].dropna().unique())
+]
+
+company_options = [
+    {
+        "label": c,
+        "value": c
+    }
+    for c in sorted(df["Company"].dropna().unique())
+]
 
 PAGES = [
     ("Home", "/", "bi bi-house-fill"),
@@ -78,12 +103,26 @@ def create_sidebar():
 
             html.H5("Filters"),
 
-            html.Label("Date Range"),
+            html.Label("Start Date"),
 
             dcc.Dropdown(
-                id="date-filter",
-                placeholder="Coming Soon",
-                disabled=True,
+               id="start-date-filter",
+               options=date_options,
+               value=df["Date"].min().strftime("%Y-%m-%d"),
+               clearable=False,
+               searchable=True,
+          ),
+
+          html.Br(),
+
+          html.Label("End Date"),
+
+          dcc.Dropdown(
+             id="end-date-filter",
+             options=date_options,
+             value=df["Date"].max().strftime("%Y-%m-%d"),
+             clearable=False,
+             searchable=True,
             ),
 
             html.Br(),
@@ -92,8 +131,10 @@ def create_sidebar():
 
             dcc.Dropdown(
                 id="sector-filter",
-                placeholder="Coming Soon",
-                disabled=True,
+                options=sector_options,
+                placeholder="Select sector",
+                searchable=True,
+                clearable=True,
             ),
 
             html.Br(),
@@ -102,8 +143,10 @@ def create_sidebar():
 
             dcc.Dropdown(
                 id="company-filter",
-                placeholder="Coming Soon",
-                disabled=True,
+                options=company_options,
+                placeholder="Select company",
+                searchable=True,
+                clearable=True,
             ),
 
         ],

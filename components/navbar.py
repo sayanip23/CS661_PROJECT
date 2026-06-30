@@ -14,13 +14,7 @@ def create_navbar():
 
             [
 
-                dbc.NavbarBrand(
-
-                    "NIFTY-50 Visual Analytics",
-
-                    className="navbar-title",
-
-                ),
+                
 
                 html.Div(
 

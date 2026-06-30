@@ -3,23 +3,6 @@ import dash_bootstrap_components as dbc
 
 
 def create_stat_card(title, value, icon, color="primary"):
-    """
-    Reusable dashboard statistic card.
-
-    Parameters
-    ----------
-    title : str
-        Card title
-
-    value : str
-        Main value
-
-    icon : str
-        Bootstrap icon class
-
-    color : str
-        Bootstrap text color
-    """
 
     return dbc.Card(
 
@@ -31,24 +14,26 @@ def create_stat_card(title, value, icon, color="primary"):
 
                     html.I(
                         className=icon,
-                        style={"fontSize": "40px"}
+                        style={"fontSize": "34px"}
                     ),
 
-                    className=f"text-{color} text-center mb-3"
+                    className=f"text-{color} text-center mb-2"
 
                 ),
 
                 html.H6(
                     title,
-                    className="text-center text-muted"
+                    className="text-center text-muted mb-2"
                 ),
 
                 html.H3(
                     value,
-                    className=f"text-center text-{color} fw-bold"
+                    className=f"text-center text-{color} fw-bold mb-0"
                 )
 
-            ]
+            ],
+
+            className="py-3"
 
         ),
 

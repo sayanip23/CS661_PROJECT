@@ -3,8 +3,9 @@
 ================================ */
 
 body{
-    background:#F8FAFC;
-    font-family:Segoe UI, sans-serif;
+    background:#F1F5F9;
+    font-family:"Segoe UI", sans-serif;
+    color:#1F2937;
 }
 
 /* ================================
@@ -133,8 +134,62 @@ body{
 
     margin-left: 280px;
 
-    margin-top:90px;
+    margin-top:60px;
 
-    padding:35px;
+    padding:10px 20px 20px 20px;
 
+}
+
+/* ================================
+   FILTERS
+================================ */
+
+/* Date Picker */
+
+.DateRangePicker {
+    width: 100%;
+}
+
+.DateRangePickerInput {
+    width: 100%;
+    border-radius: 6px;
+    border: none;
+}
+
+.DateInput {
+    width: 100px;
+}
+
+.DateInput_input {
+    font-size: 14px;
+    text-align: center;
+}
+
+/* Dropdown */
+
+.Select-control {
+    border-radius: 6px !important;
+    min-height: 40px !important;
+}
+
+.Select-menu-outer {
+    background: white !important;
+    color: black !important;
+}
+
+.Select-option {
+    color: #1F2937 !important;
+}
+
+.Select-option.is-focused {
+    background: #E5F3FF !important;
+}
+
+.Select-option.is-selected {
+    background: #10B981 !important;
+    color: white !important;
+}
+
+html {
+    scroll-behavior: smooth;
 }

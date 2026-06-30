@@ -12,31 +12,20 @@ def create_hero():
 
                 html.H1(
                     "NIFTY-50 Visual Analytics",
-                    className="display-4 fw-bold"
+                    className="display-5 fw-bold mb-2"
                 ),
 
                 html.P(
                     "Interactive dashboard for exploring historical stock market behaviour using visual analytics.",
-                    className="lead text-muted"
+                    className="lead text-muted mb-0"
                 ),
 
-                dbc.Button(
-                    "Explore Dashboard",
-                    color="success",
-                    size="lg",
-                    className="me-3"
-                ),
+            ],
 
-                dbc.Button(
-                    "Project Overview",
-                    color="outline-primary",
-                    size="lg"
-                ),
-
-            ]
+            className="py-3 px-4"
 
         ),
 
-        className="shadow rounded-4 border-0 mb-4"
+        className="shadow rounded-4 border-0 mb-3"
 
     )
