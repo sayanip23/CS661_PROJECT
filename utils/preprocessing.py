@@ -30,6 +30,7 @@ def load_dataset():
 
 
 
+
 # Function 2
 # Dataset Information
 def dataset_info(df):

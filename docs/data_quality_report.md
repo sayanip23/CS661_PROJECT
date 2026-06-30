@@ -11,7 +11,7 @@ Date Range : 2000-01-03 to 2021-04-30
 
              Column  Missing Values  Percentage
             Company               0        0.00
-             Sector            5306        2.26
+             Sector               0        0.00
                Date               0        0.00
              Symbol               0        0.00
              Series               0        0.00

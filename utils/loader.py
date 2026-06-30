@@ -25,6 +25,10 @@ def load_all_data(raw_data_path):
 
         company_name = file.replace(".csv", "")
 
+        # Handle filename and metadata mismatch
+        if company_name == "MM":
+         company_name = "M&M"
+
         # Warn if the CSV has no data
         if df.empty:
           print(f"Warning: {company_name}.csv contains no data.")
