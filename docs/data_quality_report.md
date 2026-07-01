@@ -47,12 +47,12 @@ Chronological Errors : 0
 
    Company  Maximum Gap (Days) Gap Ends On
       GAIL                 468  2001-07-02
- KOTAKBANK                 468  2001-07-02
   SHREECEM                 468  2001-07-02
 INDUSINDBK                 468  2001-07-02
+ KOTAKBANK                 468  2001-07-02
 BAJFINANCE                  15  2001-07-26
-BAJAJFINSV                   6  2014-10-07
-ADANIPORTS                   6  2014-10-07
-BAJAJ-AUTO                   6  2014-10-07
-ASIANPAINT                   6  2014-10-07
- BRITANNIA                   6  2014-10-07
+       UPL                   6  2014-10-07
+        LT                   6  2014-10-07
+       M&M                   6  2014-10-07
+     WIPRO                   6  2014-10-07
+    MARUTI                   6  2014-10-07
