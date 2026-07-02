@@ -2,39 +2,39 @@
    GENERAL
 ================================ */
 
-body{
-    background:#F1F5F9;
-    font-family:"Segoe UI", sans-serif;
-    color:#1F2937;
+body {
+    background: #F1F5F9;
+    font-family: "Segoe UI", sans-serif;
+    color: #1F2937;
 }
 
 /* ================================
    NAVBAR
 ================================ */
 
-.navbar-custom{
+.navbar-custom {
 
-    background:#0F172A !important;
+    background: #0F172A !important;
 
     height: 60px;
 
-    box-shadow:0 3px 12px rgba(0,0,0,.15);
+    box-shadow: 0 3px 12px rgba(0, 0, 0, .15);
 
 }
 
-.navbar-title{
+.navbar-title {
 
-    font-size:28px;
+    font-size: 28px;
 
-    font-weight:700;
+    font-weight: 700;
 
 }
 
-.navbar-subtitle{
+.navbar-subtitle {
 
-    color:white;
+    color: white;
 
-    font-size:20px;
+    font-size: 20px;
 
 }
 
@@ -42,57 +42,57 @@ body{
    SIDEBAR
 ================================ */
 
-.sidebar{
+.sidebar {
 
-    position:fixed;
+    position: fixed;
 
-    top:60px;
+    top: 60px;
 
-    left:0;
+    left: 0;
 
     width: 260px;
 
-    bottom:0;
+    bottom: 0;
 
-    background:#1E293B;
+    background: #1E293B;
 
-    color:white;
+    color: white;
 
-    padding:25px;
+    padding: 25px;
 
-    overflow-y:auto;
-
-}
-
-.sidebar-title{
-
-    color:#059669;
-
-    text-align:center;
-
-    font-weight:bold;
+    overflow-y: auto;
 
 }
 
-.sidebar-subtitle{
+.sidebar-title {
 
-    text-align:center;
+    color: #059669;
 
-    color:#CBD5E1;
+    text-align: center;
 
-    font-size:18px;
-
-}
-
-.sidebar hr{
-
-    border-color:#475569;
+    font-weight: bold;
 
 }
 
-.sidebar label{
+.sidebar-subtitle {
 
-    color:white;
+    text-align: center;
+
+    color: #CBD5E1;
+
+    font-size: 18px;
+
+}
+
+.sidebar hr {
+
+    border-color: #475569;
+
+}
+
+.sidebar label {
+
+    color: white;
 
 }
 
@@ -100,29 +100,29 @@ body{
    NAVIGATION
 ================================ */
 
-.nav-link-custom{
+.nav-link-custom {
 
-    color:white !important;
+    color: white !important;
 
-    margin-bottom:8px;
+    margin-bottom: 8px;
 
-    border-radius:8px;
+    border-radius: 8px;
 
-    padding:12px;
+    padding: 12px;
 
-    font-size:17px;
-
-}
-
-.nav-link-custom:hover{
-
-    background:#334155;
+    font-size: 17px;
 
 }
 
-.nav-pills .nav-link.active{
+.nav-link-custom:hover {
 
-    background:#10B981 !important;
+    background: #334155;
+
+}
+
+.nav-pills .nav-link.active {
+
+    background: #10B981 !important;
 
 }
 
@@ -130,13 +130,13 @@ body{
    CONTENT
 ================================ */
 
-.content{
+.content {
 
     margin-left: 280px;
 
-    margin-top:60px;
+    margin-top: 60px;
 
-    padding:10px 20px 20px 20px;
+    padding: 10px 20px 20px 20px;
 
 }
 
@@ -192,4 +192,135 @@ body{
 
 html {
     scroll-behavior: smooth;
+}
+
+
+
+/* =============================================================
+   Task 4.5 — Sector Growth Attribution page (pages/treemap.py)
+   ============================================================= */
+
+.growth-fullscreen-target {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 70px);
+    /* tune 70px if your navbar height differs */
+    min-height: 520px;
+    background: #ffffff;
+}
+
+.growth-fullscreen-target:fullscreen {
+    height: 100vh;
+    padding: 18px 22px;
+    background: #ffffff;
+}
+
+/* --- Toolbar --- */
+.growth-toolbar {
+    padding: 6px 2px 10px;
+    border-bottom: 1px solid #eef0f2;
+}
+
+.growth-toolbar-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1f2328;
+    margin-right: 8px;
+}
+
+.growth-toolbar-subtitle {
+    font-size: 0.72rem;
+    color: #8a8f98;
+    letter-spacing: 0.01em;
+}
+
+.growth-toolbar-btn {
+    border-radius: 8px !important;
+}
+
+.growth-period-label {
+    font-size: 0.75rem;
+    color: #6c757d;
+    font-weight: 600;
+}
+
+.growth-control-label {
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #8a8f98;
+    margin: 6px 0 4px;
+}
+
+.growth-popover-body {
+    width: 250px;
+    padding: 10px 12px;
+}
+
+/* --- KPI chip strip --- */
+.growth-kpi-bar {
+    padding: 8px 2px 10px;
+}
+
+.growth-kpi-chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    margin-right: 8px;
+    line-height: 1.6;
+}
+
+.growth-chip-label {
+    opacity: 0.85;
+}
+
+/* --- Split panes (adaptive width on hover) --- */
+.growth-split {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    gap: 14px;
+    padding: 4px 2px 2px;
+}
+
+.growth-pane {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border: 1px solid #edeff1;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(16, 24, 40, 0.04);
+    padding: 10px 14px;
+    overflow: hidden;
+    transition: flex 0.35s ease;
+}
+
+.growth-pane-title {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #495057;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.growth-pane-body {
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* Hover behavior: shrink both, then grow whichever is actually hovered */
+.growth-split:hover .growth-pane {
+    flex: 0.6 1 0;
+}
+
+.growth-split .growth-pane:hover {
+    flex: 1.7 1 0;
 }

@@ -32,7 +32,7 @@ dash.register_page(__name__, path="/correlation")
 PIPELINE = run_correlation_pipeline(n_clusters=5, linkage_method="average")
 
 RAW_DF = PIPELINE["raw_df"]
-ALL_COMPANIES = sorted(RAW_DF["Company"].unique())
+ALL_COMPANIES = sorted(RAW_DF["Company"].dropna().unique())
 
 DEFAULT_N_CLUSTERS = 5
 DEFAULT_LINKAGE = "average"
