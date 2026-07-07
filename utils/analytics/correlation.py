@@ -13,16 +13,18 @@ Pipeline:
         -> get_clustered_matrix()
 """
 
-import os
+
 
 import numpy as np
 import pandas as pd
+from utils.database import run_query
 from sklearn.cluster import AgglomerativeClustering
 from scipy.cluster.hierarchy import linkage, dendrogram as scipy_dendrogram
 from scipy.spatial.distance import squareform
 
 
-CLEAN_DATA_PATH = "data/processed/clean_stock_data.csv"
+
+
 
 # Minimum number of overlapping trading days required for a correlation
 # pair to be considered reliable (stocks have different listing dates).
@@ -32,34 +34,30 @@ MIN_OVERLAP_PERIODS = 60
 # ---------------------------------------------------------------------------
 # Step 1: Load Data
 # ---------------------------------------------------------------------------
-def load_clean_data(path: str = CLEAN_DATA_PATH) -> pd.DataFrame:
+def load_clean_data() -> pd.DataFrame:
     """
-    Reads the cleaned stock dataset produced by utils/preprocessing.py.
-
-    Expects (at minimum) columns: Company, Date, Close.
+    Loads the cleaned stock dataset from DuckDB.
 
     Returns
     -------
     pd.DataFrame
-        Sorted by Company, Date with Date parsed as datetime.
+        Sorted by Company and Date.
     """
-    if not os.path.exists(path):
-        raise FileNotFoundError(
-            f"Clean data not found at '{path}'. "
-            "Run `python utils/loader.py` then `python utils/preprocessing.py` first."
-        )
 
-    df = pd.read_csv(path, parse_dates=["Date"])
+    query = """
+        SELECT
+            Company,
+            Date,
+            Close
+        FROM clean_stock_data
+        ORDER BY Company, Date
+    """
 
-    required_cols = {"Company", "Date", "Close"}
-    missing = required_cols - set(df.columns)
-    if missing:
-        raise ValueError(f"clean_stock_data.csv is missing required columns: {missing}")
+    df = run_query(query)
 
-    df = df.sort_values(["Company", "Date"]).reset_index(drop=True)
+    df["Date"] = pd.to_datetime(df["Date"])
 
     return df
-
 
 # ---------------------------------------------------------------------------
 # Step 2: Daily Returns
@@ -242,7 +240,6 @@ def get_clustered_matrix(
 # Convenience: run the full pipeline in one call
 # ---------------------------------------------------------------------------
 def run_correlation_pipeline(
-    path: str = CLEAN_DATA_PATH,
     n_clusters: int = 5,
     linkage_method: str = "average",
 ):
@@ -258,7 +255,7 @@ def run_correlation_pipeline(
         'cluster_result'    : output of perform_agglomerative_clustering()
         'clustered_matrix'  : correlation matrix reordered by dendrogram leaves
     """
-    df = load_clean_data(path)
+    df = load_clean_data()
     df = compute_daily_returns(df)
     pivot = create_pivot_table(df)
     corr_matrix = compute_correlation_matrix(pivot)

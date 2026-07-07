@@ -1,10 +1,12 @@
 import os
+import duckdb
 import pandas as pd
 
 
 
 INPUT_FILE = "data/processed/master_stock_data.csv"
 OUTPUT_FILE = "data/processed/clean_stock_data.csv"
+DATABASE_FILE = "data/processed/stocks.duckdb"
 REPORT_FILE = "docs/data_quality_report.md"
 
 os.makedirs("data/processed", exist_ok=True)
@@ -299,12 +301,34 @@ def detect_outliers(df):
 # Save Dataset
 def save_dataset(df):
 
+    # -----------------------------
+    # Save CSV
+    # -----------------------------
     df.to_csv(
         OUTPUT_FILE,
         index=False
     )
 
     print(f"\nDataset saved to {OUTPUT_FILE}")
+
+    # -----------------------------
+    # Save DuckDB
+    # -----------------------------
+    con = duckdb.connect(DATABASE_FILE)
+
+    con.execute("DROP TABLE IF EXISTS clean_stock_data")
+
+    con.register("temp_df", df)
+
+    con.execute("""
+        CREATE TABLE clean_stock_data AS
+        SELECT *
+        FROM temp_df
+    """)
+
+    con.close()
+
+    print(f"Database saved to {DATABASE_FILE}")
     
     
     

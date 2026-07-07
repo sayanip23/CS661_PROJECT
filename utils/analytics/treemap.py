@@ -11,13 +11,15 @@ Pipeline:
         -> build_hierarchy_dataframe()
 """
 
-import os
+
 
 import numpy as np
 import pandas as pd
 
+from utils.database import run_query
 
-CLEAN_DATA_PATH = "data/processed/clean_stock_data.csv"
+
+
 
 # A company needs at least this many trading days inside the selected
 # window for its CAGR to be considered reliable (avoids wild CAGR values
@@ -31,34 +33,43 @@ ROOT_LABEL = "NIFTY-50"
 # ---------------------------------------------------------------------------
 # Step 1: Load Data
 # ---------------------------------------------------------------------------
-def load_clean_data(path: str = CLEAN_DATA_PATH) -> pd.DataFrame:
+def load_clean_data() -> pd.DataFrame:
     """
-    Reads the cleaned stock dataset produced by utils/preprocessing.py.
+    Loads the cleaned stock dataset from DuckDB.
 
-    Expects (at minimum) columns: Company, Sector, Date, Close, Volume.
+    Returns
+    -------
+    pd.DataFrame
+        Sorted by Company and Date.
     """
-    if not os.path.exists(path):
-        raise FileNotFoundError(
-            f"Clean data not found at '{path}'. "
-            "Run `python utils/loader.py` then `python utils/preprocessing.py` first."
-        )
 
-    df = pd.read_csv(path, parse_dates=["Date"])
+    query = """
+        SELECT
+            Company,
+            Sector,
+            Date,
+            Close,
+            Volume,
+            Turnover
+        FROM clean_stock_data
+        ORDER BY Company, Date
+    """
 
-    required_cols = {"Company", "Sector", "Date", "Close", "Volume"}
-    missing = required_cols - set(df.columns)
-    if missing:
-        raise ValueError(f"clean_stock_data.csv is missing required columns: {missing}")
+    df = run_query(query)
 
-    df = df.dropna(subset=["Sector"])
-    df = df.sort_values(["Company", "Date"]).reset_index(drop=True)
+    df["Date"] = pd.to_datetime(df["Date"])
 
     return df
 
-
 def get_year_bounds(df: pd.DataFrame):
-    """Returns (min_year, max_year) available in the dataset, for slider bounds."""
-    return int(df["Date"].dt.year.min()), int(df["Date"].dt.year.max())
+    """
+    Returns the minimum and maximum year available in the dataset.
+    Used for the year slider in the dashboard.
+    """
+    return (
+        int(df["Date"].dt.year.min()),
+        int(df["Date"].dt.year.max())
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +267,6 @@ def build_hierarchy_dataframe(
 # Convenience: run the full pipeline in one call
 # ---------------------------------------------------------------------------
 def run_treemap_pipeline(
-    path: str = CLEAN_DATA_PATH,
     start_date=None,
     end_date=None,
     size_metric: str = "Total_Volume",
@@ -273,7 +283,7 @@ def run_treemap_pipeline(
         'hierarchy'      : flat ids/parents/values table for the chart
         'year_bounds'    : (min_year, max_year) of the full dataset
     """
-    df = load_clean_data(path)
+    df = load_clean_data()
     year_bounds = get_year_bounds(df)
 
     windowed = filter_by_date_range(df, start_date, end_date)
