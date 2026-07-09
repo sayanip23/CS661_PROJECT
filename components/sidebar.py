@@ -4,7 +4,18 @@
 
 from dash import html, dcc
 import dash_bootstrap_components as dbc
-from data.data_manager import df
+import pandas as pd
+from utils.database import run_query
+
+df = run_query("""
+SELECT
+    Company,
+    Sector,
+    Date
+FROM clean_stock_data
+""")
+
+df["Date"] = pd.to_datetime(df["Date"])
 
 date_options = [
     {

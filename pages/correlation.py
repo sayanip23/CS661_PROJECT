@@ -67,7 +67,7 @@ def create_heatmap(clustered_matrix, order):
             zmin=-1,
             zmax=1,
             zmid=0,
-            colorbar=dict(title="Correlation", thickness=15),
+            colorbar=dict(title="Correlation", thickness=15, x=1.02, len=0.85),
             hovertemplate="%{y} vs %{x}<br>Correlation: %{z:.2f}<extra></extra>",
         )
     )
@@ -89,7 +89,7 @@ def create_heatmap(clustered_matrix, order):
 
     fig.update_layout(
         dragmode="select",
-        margin=dict(l=140, r=20, t=10, b=140),
+        margin=dict(l=140, r=80, t=10, b=40),
         height=650,
     )
 
@@ -137,7 +137,7 @@ def create_dendrogram(cluster_result):
                 x=x,
                 y=dcoord,
                 mode="lines",
-                line=dict(color=plot_color, width=1.5),
+                line=dict(color=plot_color, width=2.5),
                 hoverinfo="skip",
                 showlegend=False,
             )
@@ -146,21 +146,30 @@ def create_dendrogram(cluster_result):
     n = len(dendro["ivl"])
     fig.update_xaxes(
         range=[-0.5, n - 0.5],
-        showticklabels=False,
+        tickmode="array",
+        tickvals=list(range(n)),
+        ticktext=dendro["ivl"],      # company names
+        tickangle=90,
+        tickfont=dict(size=10),
         showgrid=False,
         zeroline=False,
     )
     fig.update_yaxes(
-        title="Distance (1 - correlation)",
+        title="Correlation Distance (1 − r)",
         showgrid=False,
         zeroline=False,
     )
 
     fig.update_layout(
-        margin=dict(l=140, r=20, t=20, b=0),
-        height=220,
-        showlegend=False,
-    )
+      title={
+        "text": "Hierarchical Clustering of Stocks",
+        "x": 0.5,
+        "xanchor": "center"
+      },
+      margin=dict(l=170, r=40, t=60, b=170),
+      height=500,
+      showlegend=False,
+   )
 
     return fig
 
@@ -264,12 +273,62 @@ layout = dbc.Container(
             className="mb-3",
         ),
 
-        dcc.Loading(
-            dcc.Graph(id="correlation-dendrogram", config={"displayModeBar": False}),
+        # ============================================================
+# Hierarchical Clustering (Dendrogram)
+# ============================================================
+
+dbc.Card(
+
+    dbc.CardBody([
+
+        html.H4(
+            "Hierarchical Clustering of Stocks",
+            className="fw-bold mb-3"
         ),
-        dcc.Loading(
-            dcc.Graph(id="correlation-heatmap", config={"displayModeBar": True}),
+
+        html.P(
+            "Stocks that merge at lower heights exhibit more similar daily-return behaviour.",
+            className="text-muted"
         ),
+
+        dcc.Loading(
+            dcc.Graph(
+                id="correlation-dendrogram",
+                config={"displayModeBar": False}
+            )
+        )
+
+    ]),
+
+    className="shadow-sm mb-4"
+
+),
+
+# ============================================================
+# Clustered Correlation Heatmap
+# ============================================================
+
+dbc.Card(
+
+    dbc.CardBody([
+
+        html.H4(
+            "Clustered Correlation Matrix",
+            className="fw-bold mb-3"
+        ),
+
+        dcc.Loading(
+            dcc.Graph(
+                id="correlation-heatmap",
+                config={"displayModeBar": True}
+            )
+        )
+
+    ]),
+
+    className="shadow-sm mb-4"
+
+),
 
         html.Hr(),
         html.H4("Closing Price Comparison", className="fw-bold"),

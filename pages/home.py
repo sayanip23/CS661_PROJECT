@@ -6,19 +6,25 @@ from components.hero import create_hero
 from components.cards import create_stat_card
 from components.feature_card import create_feature_card
 from components.workflow import create_workflow
-from data.data_manager import df
+from utils.database import run_query
 
 # ============================
 # Dashboard Statistics
 # ============================
 
-num_stocks = df["Company"].nunique()
+stats = run_query("""
+SELECT
+    COUNT(DISTINCT Company) AS num_stocks,
+    COUNT(DISTINCT Sector) AS num_sectors,
+    COUNT(DISTINCT EXTRACT(YEAR FROM Date)) AS num_years,
+    COUNT(*) AS num_records
+FROM clean_stock_data
+""")
 
-num_sectors = df["Sector"].nunique()
-
-num_years = df["Date"].dt.year.nunique()
-
-num_records = len(df)
+num_stocks = int(stats.loc[0, "num_stocks"])
+num_sectors = int(stats.loc[0, "num_sectors"])
+num_years = int(stats.loc[0, "num_years"])
+num_records = int(stats.loc[0, "num_records"])
 
 dash.register_page(__name__, path="/")
 

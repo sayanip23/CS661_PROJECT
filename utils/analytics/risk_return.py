@@ -2,14 +2,30 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
+from utils.database import run_query
 
-DATA_PATH = "data/processed/clean_stock_data.csv"
 
 
-def load_data(path: str = DATA_PATH) -> pd.DataFrame:
-    df = pd.read_csv(path)
+
+def load_data() -> pd.DataFrame:
+    """
+    Loads the cleaned stock dataset from DuckDB.
+    """
+
+    query = """
+        SELECT
+            Company,
+            Sector,
+            Date,
+            Close
+        FROM clean_stock_data
+        ORDER BY Company, Date
+    """
+
+    df = run_query(query)
+
     df["Date"] = pd.to_datetime(df["Date"])
-    df = df.sort_values(["Company", "Date"])
+
     return df
 
 
@@ -55,12 +71,12 @@ def perform_kmeans(X: np.ndarray, n_clusters: int = 4) -> np.ndarray:
     return kmeans.fit_predict(X)
 
 
-def prepare_plot_data(path: str = DATA_PATH):
+def prepare_plot_data():
     """
     Orchestrator: runs the full pipeline and returns
     (raw_df_with_returns, feature_matrix_with_clusters)
     """
-    df = load_data(path)
+    df = load_data()
     df = compute_daily_returns(df)
 
     feature_matrix = prepare_features(df)
