@@ -6,19 +6,28 @@ from components.hero import create_hero
 from components.cards import create_stat_card
 from components.feature_card import create_feature_card
 from components.workflow import create_workflow
-from data.data_manager import df
+from utils.database import run_query
 
 # ============================
-# Dashboard Statistics
+# Dashboard Statistics (via DuckDB)
 # ============================
 
-num_stocks = df["Company"].nunique()
+# Fetch all overview stats in a single, ultra-fast SQL query
+stats_query = """
+SELECT 
+    COUNT(DISTINCT Company) AS num_stocks,
+    COUNT(DISTINCT Sector) AS num_sectors,
+    COUNT(DISTINCT EXTRACT(YEAR FROM Date)) AS num_years,
+    COUNT(*) AS num_records
+FROM clean_stock_data
+"""
+stats_df = run_query(stats_query)
 
-num_sectors = df["Sector"].nunique()
-
-num_years = df["Date"].dt.year.nunique()
-
-num_records = len(df)
+num_stocks = stats_df["num_stocks"].iloc[0]
+num_sectors = stats_df["num_sectors"].iloc[0]
+num_years = stats_df["num_years"].iloc[0]
+# Add comma formatting so millions of records are readable (e.g., "1,234,567")
+num_records = f"{stats_df['num_records'].iloc[0]:,}" 
 
 dash.register_page(__name__, path="/")
 

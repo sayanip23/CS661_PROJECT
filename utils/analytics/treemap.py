@@ -34,31 +34,20 @@ ROOT_LABEL = "NIFTY-50"
 # Step 1: Load Data
 # ---------------------------------------------------------------------------
 def load_clean_data() -> pd.DataFrame:
-    """
-    Loads the cleaned stock dataset from DuckDB.
-
-    Returns
-    -------
-    pd.DataFrame
-        Sorted by Company and Date.
-    """
-
     query = """
-        SELECT
-            Company,
-            Sector,
-            Date,
-            Close,
-            Volume,
-            Turnover
+        SELECT Company, Sector, Date, Close, Volume, Turnover
         FROM clean_stock_data
+        WHERE Sector IS NOT NULL AND Close IS NOT NULL AND Volume IS NOT NULL
         ORDER BY Company, Date
     """
-
     df = run_query(query)
-
     df["Date"] = pd.to_datetime(df["Date"])
-
+    
+    # SILENT KILLER FIX: Fill any NaN volumes or turnovers so Plotly doesn't crash
+    df["Volume"] = df["Volume"].fillna(0)
+    if "Turnover" in df.columns:
+        df["Turnover"] = df["Turnover"].fillna(0)
+        
     return df
 
 def get_year_bounds(df: pd.DataFrame):
@@ -238,15 +227,28 @@ def build_hierarchy_dataframe(
         "hover_extra": f"{sector_growth.shape[0]} sectors",
     })
 
-    for _, srow in sector_growth.iterrows():
+    # Pre-calculate a lookup for sector totals to compute attribution %
+    sector_totals = sector_growth.set_index("Sector")[size_metric].to_dict()
+
+    for _, crow in company_growth.iterrows():
+        sector_total = sector_totals.get(crow["Sector"], 0)
+        # Calculate Sector Attribution
+        attribution_pct = (crow[size_metric] / sector_total) if sector_total > 0 else 0
+        
+        # Build dense hover text for the tooltip
+        hover_text = (
+            f"Sector Weight: <b>{attribution_pct:.1%}</b><br>"
+            f"<i>{crow['Trading_Days']} trading days</i>"
+        )
+
         rows.append({
-            "id": srow["Sector"],
-            "parent": ROOT_ID,
-            "label": srow["Sector"],
-            "value": srow[size_metric],
-            "cagr": srow["CAGR"],
-            "level": "sector",
-            "hover_extra": f"{int(srow['Num_Companies'])} companies",
+            "id": f"{crow['Sector']}/{crow['Company']}",
+            "parent": crow["Sector"],
+            "label": crow["Company"],
+            "value": crow[size_metric],
+            "cagr": crow["CAGR"],
+            "level": "company",
+            "hover_extra": hover_text, 
         })
 
     for _, crow in company_growth.iterrows():

@@ -29,53 +29,53 @@ PIPELINE = run_treemap_pipeline()
 MIN_YEAR, MAX_YEAR = PIPELINE["year_bounds"]
 YEAR_MARKS = {MIN_YEAR: str(MIN_YEAR), MAX_YEAR: str(MAX_YEAR)}
 
-GROWTH_COLORSCALE = "Viridis"  # colorblind-safe: monotonic luminance
 
+# Professional Red-to-Green diverging scale
+GROWTH_COLORSCALE = [
+    [0.0, "#f63538"],  # Deep Red (Heavy Loss)
+    [0.5, "#414554"],  # Neutral Slate (No Change)
+    [1.0, "#30cc5a"]   # Bright Green (High Growth)
+]
 
-# ---------------------------------------------------------------------------
-# create_growth_figure()
-# ---------------------------------------------------------------------------
-def create_growth_figure(hierarchy_df: pd.DataFrame, chart_type: str, size_metric: str) -> go.Figure:
+def create_growth_figure(hierarchy_df: pd.DataFrame, size_metric: str, color_baseline: str = "absolute") -> go.Figure:
     cagr = hierarchy_df["cagr"]
     customdata = list(zip(cagr, hierarchy_df["hover_extra"]))
     metric_label = size_metric.replace("_", " ")
 
-    lo, hi = cagr.min(), cagr.max()
-    span = (hi - lo) or 1.0
-    text_colors = ["white" if (v - lo) / span < 0.6 else "black" for v in cagr]
+    # Determine the center point of our color scale
+    market_avg = hierarchy_df.loc[hierarchy_df["id"] == "NIFTY-50", "cagr"].values[0]
+    cmid = 0.0 if color_baseline == "absolute" else market_avg
 
     marker = dict(
         colors=cagr,
         colorscale=GROWTH_COLORSCALE,
+        cmid=cmid, # Centers the color scale dynamically
         colorbar=dict(title="CAGR", tickformat=".0%", thickness=10, len=0.75),
-        line=dict(width=1, color="white"),
+        line=dict(width=1.5, color="#121212"), # Distinct borders for readability
     )
 
-    common = dict(
+    fig = go.Figure(go.Treemap(
         ids=hierarchy_df["id"],
         labels=hierarchy_df["label"],
         parents=hierarchy_df["parent"],
         values=hierarchy_df["value"],
-        branchvalues="total",
         customdata=customdata,
-        texttemplate="%{label}<br>%{customdata[0]:+.0%}",
-        textfont=dict(color=text_colors),
+        texttemplate="<b>%{label}</b><br>%{customdata[0]:+.2%}",
         hovertemplate=(
-            "<b>%{label}</b><br>CAGR %{customdata[0]:+.1%} · "
-            f"{metric_label} " + "%{value:,.0f}<extra></extra>"
+            "<b style='font-size:15px'>%{label}</b><br>"
+            "<hr style='margin: 4px 0px'>"
+            "<b>CAGR:</b> %{customdata[0]:+.2%}<br>"
+            f"<b>{metric_label}:</b> " + "%{value:,.0f}<br>"
+            "<i>%{customdata[1]}</i><extra></extra>"
         ),
         marker=marker,
-    )
+        maxdepth=3,
+        root=dict(color="#121212"), # <-- FIXED THIS LINE
+        tiling=dict(packing="squarify"),
+        textfont=dict(color="white", size=13)
+    ))
 
-    if chart_type == "sunburst":
-        fig = go.Figure(go.Sunburst(**common, maxdepth=3, insidetextorientation="radial"))
-    else:
-        fig = go.Figure(go.Treemap(
-            **common, maxdepth=3, root=dict(color="#eeeeee"),
-            tiling=dict(packing="squarify"),
-        ))
-
-    fig.update_layout(margin=dict(l=4, r=4, t=4, b=4), autosize=True)
+    fig.update_layout(margin=dict(l=2, r=2, t=2, b=2), autosize=True)
     return fig
 
 
@@ -179,12 +179,12 @@ controls_popover = html.Div(
         dbc.Popover(
             dbc.PopoverBody(
                 [
-                    html.Div("Chart", className="growth-control-label"),
+                    html.Div("Color Baseline", className="growth-control-label"),
                     dbc.RadioItems(
-                        id="chart-type-toggle",
-                        options=[{"label": "Treemap", "value": "treemap"},
-                                 {"label": "Sunburst", "value": "sunburst"}],
-                        value="treemap", inline=True,
+                        id="color-baseline-toggle",
+                        options=[{"label": "Absolute (0%)", "value": "absolute"},
+                                 {"label": "Relative (Nifty Avg)", "value": "relative"}],
+                        value="absolute", inline=True,
                         inputClassName="btn-check", labelClassName="btn btn-outline-primary btn-sm",
                         labelCheckedClassName="active", className="btn-group mb-2",
                     ),
@@ -247,7 +247,7 @@ layout = dbc.Container(
                     [
                         _pane(
                             "pane-treemap", "Sectors → companies", "growth-treemap-chart",
-                            create_growth_figure(PIPELINE["hierarchy"], "treemap", "Total_Volume"),
+                            create_growth_figure(PIPELINE["hierarchy"], "Total_Volume", "absolute"),
                         ),
                         _pane(
                             "pane-detail", f"{default_sector} companies", "growth-detail-graph",
@@ -275,16 +275,17 @@ def register_callbacks():
         Output("growth-data-store", "data"),
         Output("kpi-strip-container", "children"),
         Output("year-range-label", "children"),
-        Input("chart-type-toggle", "value"),
+        Input("color-baseline-toggle", "value"), # Replaced chart-type with color-baseline
         Input("size-metric-toggle", "value"),
         Input("year-range-slider", "value"),
     )
-    def update_growth_chart(chart_type, size_metric, year_range):
+    def update_growth_chart(color_baseline, size_metric, year_range):
         start_year, end_year = year_range
         result = run_treemap_pipeline(
             start_date=f"{start_year}-01-01", end_date=f"{end_year}-12-31", size_metric=size_metric,
         )
-        fig = create_growth_figure(result["hierarchy"], chart_type, size_metric)
+        # Pass color_baseline to the figure generator
+        fig = create_growth_figure(result["hierarchy"], size_metric, color_baseline) 
         kpi_strip = build_kpi_strip(result["company_growth"], result["sector_growth"])
         return fig, serialize_company_growth(result["company_growth"]), kpi_strip, f"{start_year}–{end_year}"
 
@@ -307,7 +308,7 @@ def register_callbacks():
         company_growth = pd.DataFrame(stored_data)
 
         if "/" in node_id:
-            _, company_name = node_id.split("/", 1)
+            sector_name, company_name = node_id.split("/", 1)
             start_year, end_year = year_range
             raw = load_clean_data()
             windowed = filter_by_date_range(raw, f"{start_year}-01-01", f"{end_year}-12-31")
@@ -315,10 +316,18 @@ def register_callbacks():
             row = company_growth[company_growth["Company"] == company_name].iloc[0]
 
             fig = create_company_price_figure(company_name, price_df, float(row["CAGR"]))
-            title = f"{company_name} · {float(row['CAGR']):+.1%} CAGR"
+            # Professional Breadcrumb Title
+            title = html.Div([
+                html.Span("NIFTY 50", className="text-muted"), " > ",
+                html.Span(sector_name, className="text-muted"), " > ",
+                html.B(f"{company_name} ({float(row['CAGR']):+.1%} CAGR)")
+            ])
         else:
             fig = create_sector_bar_figure(node_id, company_growth)
-            title = f"{node_id} companies"
+            title = html.Div([
+                html.Span("NIFTY 50", className="text-muted"), " > ",
+                html.B(f"{node_id} Sector")
+            ])
 
         return fig, title
 

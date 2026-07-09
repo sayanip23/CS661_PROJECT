@@ -73,40 +73,20 @@ def check_missing_values(df):
 # Function 4
 # Convert Data Types
 def convert_datatypes(df):
-
     print("\nConverting Data Types...")
-
-    df["Date"] = pd.to_datetime(
-        df["Date"],
-        errors="coerce"
-    )
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
 
     float_cols = [
-        "Open",
-        "High",
-        "Low",
-        "Close",
-        "Last",
-        "Prev_Close",
-        "VWAP",
-        "Turnover",
-        "Trades",
-        "Deliverable_Volume",
-        "Percent_Deliverable"
+        "Open", "High", "Low", "Close", "Last", "Prev_Close", 
+        "VWAP", "Turnover", "Trades", "Deliverable_Volume", "Percent_Deliverable"
     ]
 
     for col in float_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
 
-        df[col] = pd.to_numeric(
-            df[col],
-            errors="coerce"
-        )
-
-    df["Volume"] = pd.to_numeric(
-        df["Volume"],
-        errors="coerce"
-    )
-    df["Trades"] = df["Trades"].fillna("NaN")
+    df["Volume"] = pd.to_numeric(df["Volume"], errors="coerce")
+    
+    # Removed the incorrect string fillna("NaN")
     return df
 
 
@@ -304,11 +284,7 @@ def save_dataset(df):
     # -----------------------------
     # Save CSV
     # -----------------------------
-    df.to_csv(
-        OUTPUT_FILE,
-        index=False
-    )
-
+    df.to_csv(OUTPUT_FILE, index=False)
     print(f"\nDataset saved to {OUTPUT_FILE}")
 
     # -----------------------------
@@ -318,13 +294,8 @@ def save_dataset(df):
 
     con.execute("DROP TABLE IF EXISTS clean_stock_data")
 
-    con.register("temp_df", df)
-
-    con.execute("""
-        CREATE TABLE clean_stock_data AS
-        SELECT *
-        FROM temp_df
-    """)
+    # BULLETPROOF FIX: Ingest the cleanly formatted CSV directly into DuckDB
+    con.execute(f"CREATE TABLE clean_stock_data AS SELECT * FROM read_csv_auto('{OUTPUT_FILE}')")
 
     con.close()
 

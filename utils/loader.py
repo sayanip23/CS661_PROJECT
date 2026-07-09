@@ -76,17 +76,16 @@ def merge_metadata(master_df, metadata_path):
 
     return master_df
 
-#Function 3
+# Function 3
 def sort_data(master_df) :
     """
-    Sorting data by Company and Date.
+    Sorting data by Company and Date chronologically.
     """
-    master_df = master_df.sort_values(
-        by=["Company", "Date"]
-    )
-
+    # Parse string dates to actual datetime objects first
+    master_df["Date"] = pd.to_datetime(master_df["Date"], errors="coerce")
+    
+    master_df = master_df.sort_values(by=["Company", "Date"])
     master_df.reset_index(drop=True, inplace=True)
-
     return master_df
 
 #Function 4
@@ -99,29 +98,15 @@ def save_processed_data(master_df, output_path):
 
     master_df.to_csv(output_path, index=False)
 
-#Function 5
+# Function 5
 def reorder_columns(master_df):
     column_order = [
-        "Company",
-        "Sector",
-        "Date",
-        "Symbol",
-        "Series",
-        "Open",
-        "High",
-        "Low",
-        "Close",
-        "Last",
-        "Prev_Close",
-        "VWAP",
-        "Volume",
-        "Turnover",
-        "Trades",
-        "Deliverable_Volume",
-        "Percent_Deliverable",
+        "Company", "Sector", "Date", "Symbol", "Series",
+        "Open", "High", "Low", "Close", "Last", "Prev_Close",
+        "VWAP", "Volume", "Turnover", "Trades", "Deliverable_Volume", "Percent_Deliverable",
     ]
-
-    return master_df[column_order]
+    # Reindex safely injects NaN columns if they didn't exist in the raw CSVs
+    return master_df.reindex(columns=column_order)
 
 #Function 6
 def get_dataset_summary(master_df):
