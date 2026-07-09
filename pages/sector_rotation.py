@@ -39,13 +39,27 @@ TIME_WINDOWS = {
 }
 
 
-def create_rrg_plot(anim_df, window="All"):
+def create_rrg_plot(anim_df, window="1Y"):
     n_periods = TIME_WINDOWS.get(window)
     df = anim_df.copy()
 
     if n_periods is not None:
         recent_periods = sorted(df["Period"].unique())[-n_periods:]
         df = df[df["Period"].isin(recent_periods)]
+    else:
+        # "All" spans ~20 years of weekly frames (1000+), which is extremely slow
+        # to build server-side and to render client-side. Collapse to monthly frames
+        # so the full history animation stays responsive.
+        df["Period"] = df["Period"].dt.to_period("M").dt.start_time
+        df = (
+            df.groupby(["Sector", "Period"], as_index=False)
+            .agg(
+                RS_Ratio=("RS_Ratio", "last"),
+                RS_Momentum=("RS_Momentum", "last"),
+                Quadrant=("Quadrant", "last"),
+            )
+        )
+        df["PeriodStr"] = df["Period"].dt.strftime("%Y-%m")
 
     if df.empty:
         fig = go.Figure()
@@ -224,7 +238,7 @@ layout = dbc.Container(
                         dcc.RadioItems(
                             id="rrg-time-window",
                             options=[{"label": f"  {k}", "value": k} for k in TIME_WINDOWS],
-                            value="All",
+                            value="1Y",
                             inline=True,
                             inputClassName="me-1 ms-3",
                             labelClassName="me-2 cursor-pointer",
@@ -232,7 +246,7 @@ layout = dbc.Container(
                     ], className="d-flex align-items-center mb-3")
                 ]),
                 dcc.Loading(
-                    dcc.Graph(id="rrg-plot", figure=create_rrg_plot(ANIM_DF), clear_on_unhover=True),
+                    dcc.Graph(id="rrg-plot", figure=create_rrg_plot(ANIM_DF, window="1Y"), clear_on_unhover=True),
                     type="circle", color="#0d6efd"
                 ),
             ])
