@@ -6,9 +6,12 @@ Displays relative sector strength and momentum over time with click-to-drilldown
 using cleanly separated, synchronized stacked subplots.
 """
 
+import io
+
 import dash
 from dash import html, dcc, Input, Output, callback
 import dash_bootstrap_components as dbc
+import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -218,6 +221,8 @@ def create_sector_history_chart(rs_df, sector):
 
 layout = dbc.Container(
     [
+        dcc.Store(id="sector-rotation-rsdf-store", data=RS_DF.to_json(date_format="iso", orient="split")),
+
         dbc.Row([
             dbc.Col([
                 html.H2("Sector Rotation Analysis", className="fw-bold mt-4"),
@@ -270,21 +275,39 @@ layout = dbc.Container(
 def register_callbacks():
     @callback(
         Output("rrg-plot", "figure"),
+        Output("sector-rotation-rsdf-store", "data"),
         Input("rrg-time-window", "value"),
+        Input("start-date-filter", "value"),
+        Input("end-date-filter", "value"),
     )
-    def update_time_window(window):
-        return create_rrg_plot(ANIM_DF, window=window)
+    def update_time_window(window, start_date, end_date):
+        """Recomputes the RRG pipeline when the zoom window or the sidebar's
+        Date filter changes. (Sector/Company filters aren't applied here --
+        the RRG's whole purpose is comparing sectors against each other and
+        the market, so narrowing to one sector or company would remove the
+        comparison.)"""
+        pipeline = run_sector_rotation_pipeline(
+            weighting="return", freq="W", start_date=start_date, end_date=end_date
+        )
+        rs_df = pipeline["rs_df"]
+        anim_df = pipeline["anim_df"]
+        rs_df_json = rs_df.to_json(date_format="iso", orient="split")
+        return create_rrg_plot(anim_df, window=window), rs_df_json
 
     @callback(
         Output("rrg-sector-history", "figure"),
         Input("rrg-plot", "clickData"),
+        Input("sector-rotation-rsdf-store", "data"),
     )
-    def update_sector_history(click_data):
+    def update_sector_history(click_data, rs_df_json):
+        rs_df = pd.read_json(io.StringIO(rs_df_json), orient="split")
+        rs_df["Date"] = pd.to_datetime(rs_df["Date"])
+
         if not click_data or not click_data.get("points"):
-            return create_sector_history_chart(RS_DF, None)
-        
+            return create_sector_history_chart(rs_df, None)
+
         sector = click_data["points"][0].get("hovertext")
-        return create_sector_history_chart(RS_DF, sector)
+        return create_sector_history_chart(rs_df, sector)
 
 
 register_callbacks()

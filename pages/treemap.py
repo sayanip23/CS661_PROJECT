@@ -278,12 +278,22 @@ def register_callbacks():
         Input("chart-type-toggle", "value"),
         Input("size-metric-toggle", "value"),
         Input("year-range-slider", "value"),
+        Input("sector-filter", "value"),
+        Input("company-filter", "value"),
     )
-    def update_growth_chart(chart_type, size_metric, year_range):
+    def update_growth_chart(chart_type, size_metric, year_range, sector, company):
+        # Sector/Company come from the sidebar; the Date filter is skipped
+        # here since this page already has its own year-range control above.
         start_year, end_year = year_range
-        result = run_treemap_pipeline(
-            start_date=f"{start_year}-01-01", end_date=f"{end_year}-12-31", size_metric=size_metric,
-        )
+        try:
+            result = run_treemap_pipeline(
+                start_date=f"{start_year}-01-01", end_date=f"{end_year}-12-31", size_metric=size_metric,
+                sector=sector, company=company,
+            )
+        except ValueError:
+            # Too few trading days for this Sector/Company + year-range combo
+            # to compute a reliable CAGR -- keep showing the last valid chart.
+            return dash.no_update, dash.no_update, dash.no_update, dash.no_update
         fig = create_growth_figure(result["hierarchy"], chart_type, size_metric)
         kpi_strip = build_kpi_strip(result["company_growth"], result["sector_growth"])
         return fig, serialize_company_growth(result["company_growth"]), kpi_strip, f"{start_year}–{end_year}"

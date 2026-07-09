@@ -75,13 +75,20 @@ layout = html.Div([
     Output("timeline-heatmap", "figure"),
     Input("z-threshold-slider", "value"),
     Input("rolling-window-slider", "value"),
+    Input("start-date-filter", "value"),
+    Input("end-date-filter", "value"),
+    Input("sector-filter", "value"),
+    Input("company-filter", "value"),
     State("timeline-heatmap", "relayoutData"),
-    State("timeline-heatmap", "figure") 
+    State("timeline-heatmap", "figure")
 )
-def update_timeline(z_threshold, rolling_window, relayout_data, current_fig):
-    
+def update_timeline(z_threshold, rolling_window, start_date, end_date, sector, company, relayout_data, current_fig):
+
     # Query the Database for Market Shocks based on the current slider values
-    market_shocks = get_market_shocks(z_threshold, window=rolling_window)
+    market_shocks = get_market_shocks(
+        z_threshold, window=rolling_window,
+        sector=sector, company=company, start_date=start_date, end_date=end_date,
+    )
     
     # Plot the timeline bar chart with updated data
     fig_timeline = px.bar(
@@ -140,18 +147,20 @@ def update_timeline(z_threshold, rolling_window, relayout_data, current_fig):
     Output("beeswarm-title", "children"),
     Input("timeline-heatmap", "clickData"),
     Input("z-threshold-slider", "value"),
-    Input("rolling-window-slider", "value")
+    Input("rolling-window-slider", "value"),
+    Input("sector-filter", "value"),
+    Input("company-filter", "value"),
 )
-def update_beeswarm_dispersion(clickData, z_threshold, rolling_window):
+def update_beeswarm_dispersion(clickData, z_threshold, rolling_window, sector, company):
     if not clickData:
         empty_fig = px.scatter(title="Waiting for selection...")
         empty_fig.update_layout(template="plotly_white", xaxis_visible=False, yaxis_visible=False)
         return empty_fig, "Select a date spike on the timeline above to view stock dispersion."
 
     target_date = clickData["points"][0]["x"]
-    
+
     # Query the Database for Cross-Section Data on the selected date
-    cross_section = get_cross_section(target_date, window=rolling_window)
+    cross_section = get_cross_section(target_date, window=rolling_window, sector=sector, company=company)
 
     # Plot the Beeswarm Dispersion
     fig_beeswarm = px.strip(

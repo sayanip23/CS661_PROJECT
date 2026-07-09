@@ -1,14 +1,14 @@
 import dash
-from dash import html, dcc, callback, Input, Output
+from dash import html, dcc, callback, Input, Output, State, ctx
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 import plotly.express as px
 
-from utils.analytics.risk_return import prepare_plot_data
+from utils.analytics.risk_return import prepare_plot_data, load_company_prices, load_data
 
 dash.register_page(__name__, path="/risk_return", name="Risk vs Return")
 
-df, feature_matrix = prepare_plot_data()
+_, feature_matrix = prepare_plot_data()
 
 # Muted, professional palette — one color per cluster (0,1,2,3)
 CLUSTER_COLORS = {
@@ -154,20 +154,55 @@ layout = dbc.Container([
 @callback(
     Output("selected-company-store", "data"),
     Input("risk-return-scatter", "clickData"),
+    Input("company-filter", "value"),
+    Input("sector-filter", "value"),
+    Input("start-date-filter", "value"),
+    Input("end-date-filter", "value"),
+    State("selected-company-store", "data"),
 )
-def update_selected_company(click_data):
-    if click_data is None:
+def update_selected_company(click_data, company_filter, sector, start_date, end_date, current_company):
+    # Sidebar company filter takes priority when it's the trigger; a
+    # scatter-point click selects that company (read from customdata so this
+    # doesn't depend on the row order of any particular feature_matrix).
+    trigger = ctx.triggered_id
+
+    if trigger == "company-filter" and company_filter:
+        return company_filter
+
+    if trigger == "risk-return-scatter":
+        if click_data is None:
+            return dash.no_update
+        return click_data["points"][0]["customdata"][0]
+
+    # Date/Sector filter changed (or initial load): if the currently
+    # selected company fell outside the newly filtered universe, fall back
+    # to the first available company instead of showing stale data.
+    available = load_data(
+        start_date=start_date, end_date=end_date, sector=sector, company=company_filter
+    )["Company"].unique()
+    if len(available) == 0 or current_company in available:
         return dash.no_update
-    point_index = click_data["points"][0]["pointIndex"]
-    return feature_matrix.iloc[point_index]["Company"]
+    return sorted(available)[0]
 
 
 @callback(
     Output("risk-return-scatter", "figure"),
     Input("selected-company-store", "data"),
+    Input("start-date-filter", "value"),
+    Input("end-date-filter", "value"),
+    Input("sector-filter", "value"),
+    Input("company-filter", "value"),
 )
-def update_scatter_highlight(company):
-    return create_scatter_plot(feature_matrix, company)
+def update_scatter_highlight(company, start_date, end_date, sector, company_filter):
+    try:
+        _, fm = prepare_plot_data(
+            start_date=start_date, end_date=end_date, sector=sector, company=company_filter
+        )
+    except ValueError:
+        # Sector + Company filters don't match any data -- keep showing the
+        # last valid scatter rather than crashing the callback.
+        return dash.no_update
+    return create_scatter_plot(fm, company)
 
 
 @callback(
@@ -175,8 +210,12 @@ def update_scatter_highlight(company):
     Output("price-chart-title", "children"),
     Input("selected-company-store", "data"),
     Input("price-view-toggle", "value"),
+    Input("start-date-filter", "value"),
+    Input("end-date-filter", "value"),
 )
-def update_price_chart(company, view_option):
-    company_df = df[df["Company"] == company]
+def update_price_chart(company, view_option, start_date, end_date):
+    if not company:
+        return dash.no_update, dash.no_update
+    company_df = load_company_prices(company, start_date=start_date, end_date=end_date)
     fig = create_price_chart(company_df, company, view_option)
     return fig, f"Historical Price — {company}"

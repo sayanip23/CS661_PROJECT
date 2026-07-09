@@ -19,7 +19,7 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from scipy.cluster.hierarchy import dendrogram as scipy_dendrogram
 
-from utils.analytics.correlation import run_correlation_pipeline
+from utils.analytics.correlation import run_correlation_pipeline, load_clean_data
 
 dash.register_page(__name__, path="/correlation")
 
@@ -45,6 +45,21 @@ CORR_COLORSCALE = [
     [0.75, "rgb(239,138,98)"],
     [1.0, "rgb(178,24,43)"],
 ]
+
+
+# ---------------------------------------------------------------------------
+# _empty_message_figure()
+# ---------------------------------------------------------------------------
+def _empty_message_figure(text):
+    fig = go.Figure()
+    fig.update_layout(
+        height=400,
+        annotations=[dict(
+            text=text, xref="paper", yref="paper", x=0.5, y=0.5,
+            showarrow=False, font=dict(size=14, color="#6c757d"),
+        )],
+    )
+    return fig
 
 
 # ---------------------------------------------------------------------------
@@ -349,12 +364,25 @@ def register_callbacks():
         Output("correlation-heatmap", "figure"),
         Output("correlation-dendrogram", "figure"),
         Input("n-clusters-slider", "value"),
+        Input("start-date-filter", "value"),
+        Input("end-date-filter", "value"),
+        Input("sector-filter", "value"),
     )
-    def update_clustering(n_clusters):
+    def update_clustering(n_clusters, start_date, end_date, sector):
         """Re-clusters (sklearn) and recolors the dendrogram (scipy) when the
-        slider changes. Leaf order stays stable since it comes from the
-        linkage matrix, not from the chosen number of flat clusters."""
-        result = run_correlation_pipeline(n_clusters=n_clusters, linkage_method=DEFAULT_LINKAGE)
+        slider or the sidebar's Date/Sector filters change. Leaf order stays
+        stable since it comes from the linkage matrix, not from the chosen
+        number of flat clusters. (The Company filter isn't applied here --
+        correlating a single stock against itself is meaningless.)"""
+        try:
+            result = run_correlation_pipeline(
+                n_clusters=n_clusters, linkage_method=DEFAULT_LINKAGE,
+                start_date=start_date, end_date=end_date, sector=sector,
+            )
+        except ValueError as e:
+            empty = _empty_message_figure(str(e))
+            return empty, empty
+
         order = result["cluster_result"]["order"]
 
         heatmap_fig = create_heatmap(result["clustered_matrix"], order)
@@ -385,9 +413,14 @@ def register_callbacks():
     @callback(
         Output("correlation-time-series", "figure"),
         Input("company-selector", "value"),
+        Input("start-date-filter", "value"),
+        Input("end-date-filter", "value"),
     )
-    def update_time_series(selected_companies):
-        return create_time_series(RAW_DF, selected_companies or [])
+    def update_time_series(selected_companies, start_date, end_date):
+        if not selected_companies:
+            return create_time_series(RAW_DF, [])
+        df = load_clean_data(start_date=start_date, end_date=end_date)
+        return create_time_series(df, selected_companies)
 
 
 register_callbacks()

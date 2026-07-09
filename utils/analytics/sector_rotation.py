@@ -14,15 +14,32 @@ RS_MOMENTUM_WINDOW = 10
 RESAMPLE_FREQ = "W"
 
 
-def load_data() -> pd.DataFrame:
-    """Fetches clean stock data from DuckDB and ensures proper datetime typing."""
-    query = """
-        SELECT Company, Sector, Date, Close 
-        FROM clean_stock_data 
+def load_data(start_date=None, end_date=None) -> pd.DataFrame:
+    """Fetches clean stock data from DuckDB and ensures proper datetime typing.
+
+    Note: only date-range filtering is supported here (not sector/company).
+    The RRG is inherently a sector-vs-sector-vs-market comparison, so
+    narrowing the company/sector universe would remove the very comparison
+    the page exists to show.
+    """
+    conditions = []
+    params = []
+    if start_date is not None:
+        conditions.append("Date >= CAST(? AS DATE)")
+        params.append(start_date)
+    if end_date is not None:
+        conditions.append("Date <= CAST(? AS DATE)")
+        params.append(end_date)
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    query = f"""
+        SELECT Company, Sector, Date, Close
+        FROM clean_stock_data
+        {where_clause}
         ORDER BY Sector, Company, Date;
     """
     try:
-        df = run_query(query)
+        df = run_query(query, tuple(params) if params else None)
     except Exception as e:
         raise RuntimeError(f"Failed to fetch stock data from DuckDB: {e}")
 
@@ -163,9 +180,11 @@ def prepare_animation_data(df: pd.DataFrame, freq: str = RESAMPLE_FREQ) -> pd.Da
     return anim
 
 
-def run_sector_rotation_pipeline(weighting: str = "return", freq: str = RESAMPLE_FREQ) -> dict:
+def run_sector_rotation_pipeline(
+    weighting: str = "return", freq: str = RESAMPLE_FREQ, start_date=None, end_date=None
+) -> dict:
     """Executes the full RRG data pipeline and returns datasets for the Dash UI."""
-    df = load_data()
+    df = load_data(start_date=start_date, end_date=end_date)
     sector_df = create_sector_index(df, weighting=weighting)
     market_df = create_market_index(df, weighting=weighting)
 
