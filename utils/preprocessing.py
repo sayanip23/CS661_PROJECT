@@ -106,7 +106,6 @@ def convert_datatypes(df):
         df["Volume"],
         errors="coerce"
     )
-    df["Trades"] = df["Trades"].fillna("NaN")
     return df
 
 

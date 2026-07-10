@@ -19,7 +19,7 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from scipy.cluster.hierarchy import dendrogram as scipy_dendrogram
 
-from utils.analytics.correlation import run_correlation_pipeline
+from utils.analytics.correlation import run_correlation_pipeline, load_clean_data
 
 dash.register_page(__name__, path="/correlation")
 
@@ -48,6 +48,21 @@ CORR_COLORSCALE = [
 
 
 # ---------------------------------------------------------------------------
+# _empty_message_figure()
+# ---------------------------------------------------------------------------
+def _empty_message_figure(text):
+    fig = go.Figure()
+    fig.update_layout(
+        height=400,
+        annotations=[dict(
+            text=text, xref="paper", yref="paper", x=0.5, y=0.5,
+            showarrow=False, font=dict(size=14, color="#6c757d"),
+        )],
+    )
+    return fig
+
+
+# ---------------------------------------------------------------------------
 # create_heatmap()
 # ---------------------------------------------------------------------------
 def create_heatmap(clustered_matrix, order):
@@ -67,7 +82,7 @@ def create_heatmap(clustered_matrix, order):
             zmin=-1,
             zmax=1,
             zmid=0,
-            colorbar=dict(title="Correlation", thickness=15),
+            colorbar=dict(title="Correlation", thickness=15, x=1.02, len=0.85),
             hovertemplate="%{y} vs %{x}<br>Correlation: %{z:.2f}<extra></extra>",
         )
     )
@@ -89,7 +104,7 @@ def create_heatmap(clustered_matrix, order):
 
     fig.update_layout(
         dragmode="select",
-        margin=dict(l=140, r=20, t=10, b=140),
+        margin=dict(l=140, r=80, t=10, b=40),
         height=650,
     )
 
@@ -137,7 +152,7 @@ def create_dendrogram(cluster_result):
                 x=x,
                 y=dcoord,
                 mode="lines",
-                line=dict(color=plot_color, width=1.5),
+                line=dict(color=plot_color, width=2.5),
                 hoverinfo="skip",
                 showlegend=False,
             )
@@ -146,21 +161,30 @@ def create_dendrogram(cluster_result):
     n = len(dendro["ivl"])
     fig.update_xaxes(
         range=[-0.5, n - 0.5],
-        showticklabels=False,
+        tickmode="array",
+        tickvals=list(range(n)),
+        ticktext=dendro["ivl"],      # company names
+        tickangle=90,
+        tickfont=dict(size=10),
         showgrid=False,
         zeroline=False,
     )
     fig.update_yaxes(
-        title="Distance (1 - correlation)",
+        title="Correlation Distance (1 − r)",
         showgrid=False,
         zeroline=False,
     )
 
     fig.update_layout(
-        margin=dict(l=140, r=20, t=20, b=0),
-        height=220,
-        showlegend=False,
-    )
+      title={
+        "text": "Hierarchical Clustering of Stocks",
+        "x": 0.5,
+        "xanchor": "center"
+      },
+      margin=dict(l=170, r=40, t=60, b=170),
+      height=500,
+      showlegend=False,
+   )
 
     return fig
 
@@ -264,12 +288,62 @@ layout = dbc.Container(
             className="mb-3",
         ),
 
-        dcc.Loading(
-            dcc.Graph(id="correlation-dendrogram", config={"displayModeBar": False}),
+        # ============================================================
+# Hierarchical Clustering (Dendrogram)
+# ============================================================
+
+dbc.Card(
+
+    dbc.CardBody([
+
+        html.H4(
+            "Hierarchical Clustering of Stocks",
+            className="fw-bold mb-3"
         ),
-        dcc.Loading(
-            dcc.Graph(id="correlation-heatmap", config={"displayModeBar": True}),
+
+        html.P(
+            "Stocks that merge at lower heights exhibit more similar daily-return behaviour.",
+            className="text-muted"
         ),
+
+        dcc.Loading(
+            dcc.Graph(
+                id="correlation-dendrogram",
+                config={"displayModeBar": False}
+            )
+        )
+
+    ]),
+
+    className="shadow-sm mb-4"
+
+),
+
+# ============================================================
+# Clustered Correlation Heatmap
+# ============================================================
+
+dbc.Card(
+
+    dbc.CardBody([
+
+        html.H4(
+            "Clustered Correlation Matrix",
+            className="fw-bold mb-3"
+        ),
+
+        dcc.Loading(
+            dcc.Graph(
+                id="correlation-heatmap",
+                config={"displayModeBar": True}
+            )
+        )
+
+    ]),
+
+    className="shadow-sm mb-4"
+
+),
 
         html.Hr(),
         html.H4("Closing Price Comparison", className="fw-bold"),
@@ -290,12 +364,25 @@ def register_callbacks():
         Output("correlation-heatmap", "figure"),
         Output("correlation-dendrogram", "figure"),
         Input("n-clusters-slider", "value"),
+        Input("start-date-filter", "value"),
+        Input("end-date-filter", "value"),
+        Input("sector-filter", "value"),
     )
-    def update_clustering(n_clusters):
+    def update_clustering(n_clusters, start_date, end_date, sector):
         """Re-clusters (sklearn) and recolors the dendrogram (scipy) when the
-        slider changes. Leaf order stays stable since it comes from the
-        linkage matrix, not from the chosen number of flat clusters."""
-        result = run_correlation_pipeline(n_clusters=n_clusters, linkage_method=DEFAULT_LINKAGE)
+        slider or the sidebar's Date/Sector filters change. Leaf order stays
+        stable since it comes from the linkage matrix, not from the chosen
+        number of flat clusters. (The Company filter isn't applied here --
+        correlating a single stock against itself is meaningless.)"""
+        try:
+            result = run_correlation_pipeline(
+                n_clusters=n_clusters, linkage_method=DEFAULT_LINKAGE,
+                start_date=start_date, end_date=end_date, sector=sector,
+            )
+        except ValueError as e:
+            empty = _empty_message_figure(str(e))
+            return empty, empty
+
         order = result["cluster_result"]["order"]
 
         heatmap_fig = create_heatmap(result["clustered_matrix"], order)
@@ -326,9 +413,14 @@ def register_callbacks():
     @callback(
         Output("correlation-time-series", "figure"),
         Input("company-selector", "value"),
+        Input("start-date-filter", "value"),
+        Input("end-date-filter", "value"),
     )
-    def update_time_series(selected_companies):
-        return create_time_series(RAW_DF, selected_companies or [])
+    def update_time_series(selected_companies, start_date, end_date):
+        if not selected_companies:
+            return create_time_series(RAW_DF, [])
+        df = load_clean_data(start_date=start_date, end_date=end_date)
+        return create_time_series(df, selected_companies)
 
 
 register_callbacks()

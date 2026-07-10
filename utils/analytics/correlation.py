@@ -34,9 +34,10 @@ MIN_OVERLAP_PERIODS = 60
 # ---------------------------------------------------------------------------
 # Step 1: Load Data
 # ---------------------------------------------------------------------------
-def load_clean_data() -> pd.DataFrame:
+def load_clean_data(start_date=None, end_date=None, sector=None) -> pd.DataFrame:
     """
-    Loads the cleaned stock dataset from DuckDB.
+    Loads the cleaned stock dataset from DuckDB, optionally restricted to a
+    date range and/or a single sector.
 
     Returns
     -------
@@ -44,16 +45,31 @@ def load_clean_data() -> pd.DataFrame:
         Sorted by Company and Date.
     """
 
-    query = """
+    conditions = []
+    params = []
+    if start_date is not None:
+        conditions.append("Date >= CAST(? AS DATE)")
+        params.append(start_date)
+    if end_date is not None:
+        conditions.append("Date <= CAST(? AS DATE)")
+        params.append(end_date)
+    if sector is not None:
+        conditions.append("Sector = ?")
+        params.append(sector)
+
+    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+    query = f"""
         SELECT
             Company,
             Date,
             Close
         FROM clean_stock_data
+        {where_clause}
         ORDER BY Company, Date
     """
 
-    df = run_query(query)
+    df = run_query(query, tuple(params) if params else None)
 
     df["Date"] = pd.to_datetime(df["Date"])
 
@@ -242,6 +258,9 @@ def get_clustered_matrix(
 def run_correlation_pipeline(
     n_clusters: int = 5,
     linkage_method: str = "average",
+    start_date=None,
+    end_date=None,
+    sector=None,
 ):
     """
     Runs steps 1-6 end to end. Used by pages/correlation.py.
@@ -255,10 +274,19 @@ def run_correlation_pipeline(
         'cluster_result'    : output of perform_agglomerative_clustering()
         'clustered_matrix'  : correlation matrix reordered by dendrogram leaves
     """
-    df = load_clean_data()
+    df = load_clean_data(start_date=start_date, end_date=end_date, sector=sector)
     df = compute_daily_returns(df)
     pivot = create_pivot_table(df)
     corr_matrix = compute_correlation_matrix(pivot)
+
+    if len(corr_matrix.columns) < 2:
+        raise ValueError(
+            "Fewer than 2 companies in the selected Date/Sector filter -- "
+            "correlation and clustering need at least 2 companies to compare."
+        )
+
+    # A sector filter can leave fewer companies than the requested cluster count.
+    n_clusters = max(1, min(n_clusters, len(corr_matrix.columns) - 1))
     cluster_result = perform_agglomerative_clustering(
         corr_matrix, n_clusters=n_clusters, linkage_method=linkage_method
     )

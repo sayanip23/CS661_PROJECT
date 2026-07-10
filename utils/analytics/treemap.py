@@ -271,6 +271,8 @@ def run_treemap_pipeline(
     end_date=None,
     size_metric: str = "Total_Volume",
     min_trading_days: int = MIN_TRADING_DAYS,
+    sector=None,
+    company=None,
 ):
     """
     Runs steps 1-5 end to end. Used by pages/treemap.py.
@@ -287,6 +289,10 @@ def run_treemap_pipeline(
     year_bounds = get_year_bounds(df)
 
     windowed = filter_by_date_range(df, start_date, end_date)
+    if sector is not None:
+        windowed = windowed[windowed["Sector"] == sector]
+    if company is not None:
+        windowed = windowed[windowed["Company"] == company]
     company_growth = compute_company_growth(windowed, min_trading_days=min_trading_days)
     sector_growth = aggregate_sector_growth(company_growth)
     hierarchy = build_hierarchy_dataframe(company_growth, sector_growth, size_metric=size_metric)

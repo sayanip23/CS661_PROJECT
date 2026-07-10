@@ -2,7 +2,7 @@ from dash import html
 import dash_bootstrap_components as dbc
 
 
-def create_stat_card(title, value, icon, color="primary"):
+def create_stat_card(title, value, icon, color="primary", value_id=None):
 
     return dbc.Card(
 
@@ -28,6 +28,7 @@ def create_stat_card(title, value, icon, color="primary"):
 
                 html.H3(
                     value,
+                    id=value_id,
                     className=f"text-center text-{color} fw-bold mb-0"
                 )
 
