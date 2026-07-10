@@ -4,7 +4,12 @@ import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
-from utils.database import run_query  # <-- Import the database utility
+from utils.database import run_query
+from utils.logger import get_logger
+from utils.analytics.shared import compute_daily_returns, safe_lru_cache
+
+logger = get_logger(__name__)
+
 
 def load_data() -> pd.DataFrame:
     """Fetches clean data from DuckDB for risk-return profiling."""
@@ -17,13 +22,6 @@ def load_data() -> pd.DataFrame:
     df = run_query(query)
     df["Date"] = pd.to_datetime(df["Date"])
     return df
-
-
-def compute_daily_returns(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy()
-    df["Daily_Return"] = df.groupby("Company")["Close"].pct_change()
-    return df
-
 
 def compute_annual_return(df: pd.DataFrame) -> pd.Series:
     return df.groupby("Company")["Daily_Return"].mean() * 252
@@ -43,6 +41,9 @@ def prepare_features(df: pd.DataFrame) -> pd.DataFrame:
         "Annual_Volatility": annual_volatility.values,
     })
 
+    RISK_FREE_RATE = 0.05
+    feature_matrix["Sharpe_Ratio"] = (feature_matrix["Annual_Return"] - RISK_FREE_RATE) / feature_matrix["Annual_Volatility"]
+
     sector = df.groupby("Company")["Sector"].first()
     feature_matrix["Sector"] = feature_matrix["Company"].map(sector)
 
@@ -61,16 +62,24 @@ def perform_kmeans(X: np.ndarray, n_clusters: int = 4) -> np.ndarray:
     return kmeans.fit_predict(X)
 
 
+@safe_lru_cache(maxsize=1)
 def prepare_plot_data():
     """
     Orchestrator: runs the full pipeline using DuckDB and returns
     (raw_df_with_returns, feature_matrix_with_clusters)
     """
-    df = load_data()  # <-- Removed the 'path' argument here
-    df = compute_daily_returns(df)
+    try:
+        df = load_data()  # <-- Removed the 'path' argument here
+        if df.empty:
+            return pd.DataFrame(), pd.DataFrame()
+            
+        df = compute_daily_returns(df)
 
-    feature_matrix = prepare_features(df)
-    X = scale_features(feature_matrix)
-    feature_matrix["Cluster"] = perform_kmeans(X).astype(str)
+        feature_matrix = prepare_features(df)
+        X = scale_features(feature_matrix)
+        feature_matrix["Cluster"] = perform_kmeans(X).astype(str)
 
-    return df, feature_matrix
+        return df, feature_matrix
+    except Exception as e:
+        logger.error(f"Risk-Return pipeline failed: {e}")
+        return pd.DataFrame(), pd.DataFrame()

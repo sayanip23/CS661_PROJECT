@@ -1,310 +1,337 @@
-"""
-utils/analytics/treemap.py
-
-Backend analytics for Sector-Level Growth Attribution (Task 4.5).
-
-Pipeline:
-    load_clean_data()
-        -> filter_by_date_range()
-        -> compute_company_growth()
-        -> aggregate_sector_growth()
-        -> build_hierarchy_dataframe()
-"""
-
-
-
-import numpy as np
 import pandas as pd
-
+import numpy as np
 from utils.database import run_query
+from utils.logger import get_logger
+from utils.analytics.shared import compute_daily_returns, safe_lru_cache
 
+logger = get_logger(__name__)
 
-
-
-# A company needs at least this many trading days inside the selected
-# window for its CAGR to be considered reliable (avoids wild CAGR values
-# from newly-listed stocks with only a handful of trading days).
-MIN_TRADING_DAYS = 30
-
-ROOT_ID = "NIFTY-50"
-ROOT_LABEL = "NIFTY-50"
-
-
-# ---------------------------------------------------------------------------
-# Step 1: Load Data
-# ---------------------------------------------------------------------------
-def load_clean_data() -> pd.DataFrame:
+@safe_lru_cache(maxsize=32)
+def load_clean_data(start_date: str, end_date: str) -> pd.DataFrame:
+    """Fetches clean data from DuckDB for the specific date window."""
     query = """
         SELECT Company, Sector, Date, Close, Volume, Turnover
         FROM clean_stock_data
-        WHERE Sector IS NOT NULL AND Close IS NOT NULL AND Volume IS NOT NULL
+        WHERE Date >= ? AND Date <= ?
+          AND Close IS NOT NULL AND Volume IS NOT NULL
         ORDER BY Company, Date
     """
-    df = run_query(query)
+    df = run_query(query, params=(start_date, end_date))
     df["Date"] = pd.to_datetime(df["Date"])
-    
-    # SILENT KILLER FIX: Fill any NaN volumes or turnovers so Plotly doesn't crash
     df["Volume"] = df["Volume"].fillna(0)
     if "Turnover" in df.columns:
         df["Turnover"] = df["Turnover"].fillna(0)
-        
+    df = compute_daily_returns(df)
     return df
 
-def get_year_bounds(df: pd.DataFrame):
-    """
-    Returns the minimum and maximum year available in the dataset.
-    Used for the year slider in the dashboard.
-    """
-    return (
-        int(df["Date"].dt.year.min()),
-        int(df["Date"].dt.year.max())
-    )
+def compute_growth_metrics(df: pd.DataFrame, size_metric: str, group_by: str = "Sector") -> tuple:
+    if df.empty:
+        return pd.DataFrame(), pd.DataFrame()
+        
+    actual_size_col = 'Volume' if 'Volume' in size_metric else 'Turnover'
+    market_total_size = df[actual_size_col].sum()
 
-
-# ---------------------------------------------------------------------------
-# Step 2: Restrict to the user-selected window
-# ---------------------------------------------------------------------------
-def filter_by_date_range(df: pd.DataFrame, start_date=None, end_date=None) -> pd.DataFrame:
-    """
-    Restricts the dataset to [start_date, end_date] (inclusive). Either bound
-    may be None to leave that side open.
-    """
-    out = df
-    if start_date is not None:
-        out = out[out["Date"] >= pd.to_datetime(start_date)]
-    if end_date is not None:
-        out = out[out["Date"] <= pd.to_datetime(end_date)]
-    return out
-
-
-# ---------------------------------------------------------------------------
-# Step 3: Per-company CAGR + Total Volume
-# ---------------------------------------------------------------------------
-def compute_company_growth(
-    df: pd.DataFrame,
-    min_trading_days: int = MIN_TRADING_DAYS,
-) -> pd.DataFrame:
-    """
-    For every company, computes:
-        - Start/End close price and date within the (already filtered) window
-        - CAGR = (End_Close / Start_Close) ** (1 / years) - 1
-        - Total traded Volume and Turnover across the window
-        - Number of trading days observed
-
-    Companies with fewer than `min_trading_days` observations, or a
-    non-positive starting price, are dropped (CAGR would be unreliable
-    or undefined).
-
-    Returns
-    -------
-    pd.DataFrame with one row per company:
-        Company, Sector, Start_Date, End_Date, Start_Close, End_Close,
-        Years, CAGR, Total_Volume, Total_Turnover, Trading_Days
-    """
-    has_turnover = "Turnover" in df.columns
-    records = []
-
-    for (company, sector), group in df.groupby(["Company", "Sector"]):
-        group = group.sort_values("Date")
-
-        if len(group) < min_trading_days:
-            continue
-
-        start_row = group.iloc[0]
-        end_row = group.iloc[-1]
-
-        start_close = start_row["Close"]
-        end_close = end_row["Close"]
-
-        if pd.isna(start_close) or pd.isna(end_close) or start_close <= 0:
-            continue
-
-        years = (end_row["Date"] - start_row["Date"]).days / 365.25
-        if years <= 0:
-            continue
-
-        cagr = (end_close / start_close) ** (1 / years) - 1
-
-        records.append({
-            "Company": company,
-            "Sector": sector,
-            "Start_Date": start_row["Date"],
-            "End_Date": end_row["Date"],
-            "Start_Close": start_close,
-            "End_Close": end_close,
-            "Years": years,
-            "CAGR": cagr,
-            "Total_Volume": group["Volume"].sum(),
-            "Total_Turnover": group["Turnover"].sum() if has_turnover else np.nan,
-            "Trading_Days": len(group),
+    stats = []
+    for (company, sector), group in df.groupby(['Company', 'Sector']):
+        start_price, end_price = group['Close'].iloc[0], group['Close'].iloc[-1]
+        days = (group['Date'].iloc[-1] - group['Date'].iloc[0]).days
+        
+        cagr = ((end_price / start_price) ** (365.25 / days)) - 1 if days > 0 else 0
+        volatility = group['Daily_Return'].std() * np.sqrt(252)
+        sharpe = (cagr / volatility) if volatility > 0 else 0
+        
+        total_size = group[actual_size_col].sum()
+        total_volume = group['Volume'].sum()
+        total_turnover = group.get('Turnover', group['Volume']).sum()
+        market_weight = total_size / market_total_size if market_total_size > 0 else 0
+        
+        stats.append({
+            'Company': company, 'Sector': sector,
+            'CAGR': cagr, 'Volatility': volatility, 'Sharpe_Ratio': np.clip(sharpe, -3, 3),
+            'Market_Weight': market_weight, 
+            'Total_Volume': total_volume, 'Total_Turnover': total_turnover,
+            size_metric: total_size,
+            'Trading_Days': len(group),
+            'Max_Drawdown': (group['Close'] / group['Close'].cummax() - 1).min()
         })
+        
+    company_growth = pd.DataFrame(stats)
+    company_growth['Market_Rank'] = company_growth['Market_Weight'].rank(ascending=False, method='min')
+    
+    # Generate Categorical Profiles for Multi-Layer Hierarchy
+    def safe_qcut(series, q, labels):
+        try:
+            return pd.qcut(series, q=q, labels=labels, duplicates='drop')
+        except Exception:
+            return labels[len(labels)//2]
+            
+    company_growth['Risk Profile'] = safe_qcut(company_growth['Volatility'], 3, ["Low Risk", "Medium Risk", "High Risk"])
+    company_growth['Return Profile'] = safe_qcut(company_growth['CAGR'], 3, ["Laggard", "Average", "Leader"])
+    company_growth['Liquidity Profile'] = safe_qcut(company_growth['Total_Turnover'], 3, ["Low Liquidity", "Medium Liquidity", "High Liquidity"])
+    
+    if group_by == "Correlation Cluster":
+        try:
+            from sklearn.cluster import KMeans
+            # Pivot to get daily returns per company
+            ret_matrix = df.pivot(index='Date', columns='Company', values='Daily_Return').fillna(0)
+            # Use correlation distance as features
+            corr_matrix = ret_matrix.corr().fillna(0)
+            
+            kmeans = KMeans(n_clusters=min(5, len(corr_matrix.columns)), random_state=42, n_init=10)
+            clusters = kmeans.fit_predict(corr_matrix)
+            
+            cluster_map = {comp: f"Cluster {c+1}" for comp, c in zip(corr_matrix.columns, clusters)}
+            company_growth['Correlation Cluster'] = company_growth['Company'].map(cluster_map)
+        except Exception as e:
+            logger.error(f"Clustering failed: {e}")
+            company_growth['Correlation Cluster'] = "Unclustered"
 
-    result = pd.DataFrame.from_records(records)
+    if group_by not in company_growth.columns:
+        group_by = "Sector"
+        
+    sector_growth = company_growth.groupby(group_by).agg({
+        'Total_Volume': 'sum', 'Total_Turnover': 'sum', size_metric: 'sum', 
+        'CAGR': 'mean', 'Volatility': 'mean', 'Market_Weight': 'sum', 'Max_Drawdown': 'mean'
+    }).reset_index()
+    sector_growth = sector_growth.rename(columns={group_by: 'Sector'}) # Keep the column name 'Sector' internally for compatibility with frontend mapping
+    sector_growth['Market_Rank'] = sector_growth['Market_Weight'].rank(ascending=False, method='min')
+    
+    return company_growth, sector_growth
 
-    if result.empty:
-        raise ValueError(
-            "No companies had enough trading days in the selected window "
-            "to compute a reliable CAGR. Try widening the date range."
-        )
+def format_html_metric(val, is_pct=True, diff=False):
+    if pd.isna(val) or val is None:
+        return "<span style='color:#9499a6'>N/A</span>"
+    color = "#21ce99" if val > 0 else ("#f62d2d" if val < 0 else "#9499a6")
+    sign = "+" if diff and val > 0 else ""
+    formatted_val = f"{sign}{val:.2%}" if is_pct else f"{sign}{val:.2f}"
+    return f"<span style='color:{color}'>{formatted_val}</span>"
 
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Step 4: Sector-Level Aggregation
-# ---------------------------------------------------------------------------
-def aggregate_sector_growth(company_growth: pd.DataFrame) -> pd.DataFrame:
-    """
-    Rolls the per-company table up to one row per Sector:
-        - Total_Volume / Total_Turnover: summed across constituent companies
-        - CAGR: volume-weighted average of constituent CAGRs (a heavily-traded
-          stock's growth moves the sector figure more than a thinly-traded
-          one -- a simple stand-in for a market-cap-weighted sector index,
-          since the dataset has no shares-outstanding/market-cap field).
-        - Num_Companies: constituent count, shown on hover.
-
-    Returns
-    -------
-    pd.DataFrame with columns: Sector, Total_Volume, Total_Turnover, CAGR, Num_Companies
-    """
-    def weighted_cagr(g):
-        weights = g["Total_Volume"]
-        if weights.sum() == 0:
-            return g["CAGR"].mean()
-        return np.average(g["CAGR"], weights=weights)
-
-    sector_df = (
-        company_growth.groupby("Sector")
-        .apply(lambda g: pd.Series({
-            "Total_Volume": g["Total_Volume"].sum(),
-            "Total_Turnover": g["Total_Turnover"].sum(),
-            "CAGR": weighted_cagr(g),
-            "Num_Companies": len(g),
-        }))
-        .reset_index()
-    )
-
-    return sector_df
-
-
-# ---------------------------------------------------------------------------
-# Step 5: Build the Treemap/Sunburst hierarchy
-# ---------------------------------------------------------------------------
-def build_hierarchy_dataframe(
-    company_growth: pd.DataFrame,
-    sector_growth: pd.DataFrame,
-    size_metric: str = "Total_Volume",
-) -> pd.DataFrame:
-    """
-    Builds a flat ids/parents/values table that Plotly's go.Treemap and
-    go.Sunburst both consume directly, with three levels:
-
-        NIFTY-50 (root) -> Sector -> Company
-
-    `size_metric` controls what determines segment area/arc size
-    ('Total_Volume' or 'Total_Turnover'); CAGR always drives color.
-
-    Returns
-    -------
-    pd.DataFrame with columns: id, parent, label, value, cagr, level, hover_extra
-    """
+def build_hierarchy_dataframe(company_growth: pd.DataFrame, sector_growth: pd.DataFrame, size_metric: str, group_by: str = "Sector") -> pd.DataFrame:
+    if company_growth.empty:
+        return pd.DataFrame()
+        
     rows = []
-
-    root_value = sector_growth[size_metric].sum()
-    root_cagr = (
-        np.average(sector_growth["CAGR"], weights=sector_growth[size_metric])
-        if sector_growth[size_metric].sum() > 0
-        else sector_growth["CAGR"].mean()
-    )
-
+    market_avg_cagr = company_growth['CAGR'].mean()
+    market_avg_sharpe = company_growth['Sharpe_Ratio'].mean()
+    market_total_size = company_growth[size_metric].sum()
+    market_total_vol = company_growth['Total_Volume'].sum()
+    market_total_turn = company_growth['Total_Turnover'].sum()
+    market_volatility = company_growth['Volatility'].mean()
+    market_max_dd = company_growth['Max_Drawdown'].mean()
+    
+    # Floor value to ensure visibility of tiny rectangles (0.25% of market total)
+    min_visible_size = market_total_size * 0.0025
+    
+    # Root Node
     rows.append({
-        "id": ROOT_ID,
-        "parent": "",
-        "label": ROOT_LABEL,
-        "value": root_value,
-        "cagr": root_cagr,
-        "level": "root",
-        "hover_extra": f"{sector_growth.shape[0]} sectors",
+        "id": "NIFTY-50", "parent": "", "label": "NIFTY-50", "value": 0,
+        "cagr": market_avg_cagr, "sharpe": market_avg_sharpe, "level": "root", 
+        "volume": market_total_vol, "turnover": market_total_turn, 
+        "market_weight": 1.0, "sector_weight": 1.0, "rank": 1, "sector": "Market", "company": "NIFTY-50",
+        "volatility": market_volatility, "max_drawdown": market_max_dd,
+        "hover_cagr": format_html_metric(market_avg_cagr, True, True),
+        "hover_sharpe": format_html_metric(market_avg_sharpe, False, False),
+        "diff_market_cagr": format_html_metric(0, True, True),
+        "diff_market_sharpe": format_html_metric(0, False, True),
+        "diff_sector_cagr": format_html_metric(0, True, True),
+        "diff_sector_sharpe": format_html_metric(0, False, True),
+        "sector_avg_cagr": format_html_metric(market_avg_cagr, True, False),
+        "sector_avg_sharpe": format_html_metric(market_avg_sharpe, False, False)
     })
 
-    # Pre-calculate a lookup for sector totals to compute attribution %
-    sector_totals = sector_growth.set_index("Sector")[size_metric].to_dict()
-
-    for _, crow in company_growth.iterrows():
-        sector_total = sector_totals.get(crow["Sector"], 0)
-        # Calculate Sector Attribution
-        attribution_pct = (crow[size_metric] / sector_total) if sector_total > 0 else 0
+    # Sector/Group Nodes
+    for _, srow in sector_growth.iterrows():
+        s_cagr = srow["CAGR"]
+        s_sharpe = srow["CAGR"] / srow["Volatility"] if srow["Volatility"]>0 else 0
+        g_name = str(srow["Sector"])
         
-        # Build dense hover text for the tooltip
-        hover_text = (
-            f"Sector Weight: <b>{attribution_pct:.1%}</b><br>"
-            f"<i>{crow['Trading_Days']} trading days</i>"
-        )
-
         rows.append({
-            "id": f"{crow['Sector']}/{crow['Company']}",
-            "parent": crow["Sector"],
-            "label": crow["Company"],
-            "value": crow[size_metric],
-            "cagr": crow["CAGR"],
-            "level": "company",
-            "hover_extra": hover_text, 
+            "id": g_name, "parent": "NIFTY-50", "label": g_name, 
+            "value": 0,
+            "cagr": s_cagr, "sharpe": s_sharpe,
+            "level": "sector", "volume": srow["Total_Volume"], "turnover": srow["Total_Turnover"],
+            "market_weight": srow["Market_Weight"], "sector_weight": 1.0, "rank": srow["Market_Rank"],
+            "sector": g_name, "company": "",
+            "volatility": srow["Volatility"], "max_drawdown": srow["Max_Drawdown"],
+            "hover_cagr": format_html_metric(s_cagr, True, True),
+            "hover_sharpe": format_html_metric(s_sharpe, False, False),
+            "diff_market_cagr": format_html_metric(s_cagr - market_avg_cagr, True, True),
+            "diff_market_sharpe": format_html_metric(s_sharpe - market_avg_sharpe, False, True),
+            "diff_sector_cagr": format_html_metric(0, True, True),
+            "diff_sector_sharpe": format_html_metric(0, False, True),
+            "sector_avg_cagr": format_html_metric(s_cagr, True, False),
+            "sector_avg_sharpe": format_html_metric(s_sharpe, False, False)
         })
 
+    # Company Nodes
     for _, crow in company_growth.iterrows():
+        if crow[size_metric] <= 0:
+            continue
+            
+        c_cagr = crow["CAGR"]
+        c_sharpe = crow["Sharpe_Ratio"]
+        g_name = str(crow.get(group_by, crow["Sector"]))
+        
+        # Get sector/group averages
+        srow = sector_growth[sector_growth["Sector"] == g_name].iloc[0]
+        s_cagr = srow["CAGR"]
+        s_sharpe = srow["CAGR"] / srow["Volatility"] if srow["Volatility"]>0 else 0
+        sector_total = srow[size_metric]
+        sector_weight = crow[size_metric] / sector_total if sector_total > 0 else 0
+            
         rows.append({
-            "id": f"{crow['Sector']}/{crow['Company']}",
-            "parent": crow["Sector"],
-            "label": crow["Company"],
-            "value": crow[size_metric],
-            "cagr": crow["CAGR"],
-            "level": "company",
-            "hover_extra": f"{crow['Trading_Days']} trading days",
+            "id": f"{g_name}/{crow['Company']}", "parent": g_name, "label": crow["Company"],
+            "value": max(crow[size_metric], min_visible_size),
+            "cagr": c_cagr, "sharpe": c_sharpe,
+            "level": "company", "volume": crow["Total_Volume"], "turnover": crow["Total_Turnover"],
+            "market_weight": crow["Market_Weight"], "sector_weight": sector_weight, "rank": crow["Market_Rank"],
+            "sector": g_name, "company": crow["Company"],
+            "volatility": crow["Volatility"], "max_drawdown": crow["Max_Drawdown"],
+            "hover_cagr": format_html_metric(c_cagr, True, True),
+            "hover_sharpe": format_html_metric(c_sharpe, False, False),
+            "diff_market_cagr": format_html_metric(c_cagr - market_avg_cagr, True, True),
+            "diff_market_sharpe": format_html_metric(c_sharpe - market_avg_sharpe, False, True),
+            "diff_sector_cagr": format_html_metric(c_cagr - s_cagr, True, True),
+            "diff_sector_sharpe": format_html_metric(c_sharpe - s_sharpe, False, True),
+            "sector_avg_cagr": format_html_metric(s_cagr, True, False),
+            "sector_avg_sharpe": format_html_metric(s_sharpe, False, False)
         })
 
     return pd.DataFrame(rows)
 
+@safe_lru_cache(maxsize=32)
+def run_treemap_pipeline(start_date: str, end_date: str, size_metric: str = "Total_Volume", group_by: str = "Sector") -> dict:
+    try:
+        df = load_clean_data(start_date, end_date)
+        company_growth, sector_growth = compute_growth_metrics(df, size_metric, group_by)
+        hierarchy = build_hierarchy_dataframe(company_growth, sector_growth, size_metric, group_by)
+        
+        return {
+            "hierarchy": hierarchy,
+            "company_growth": company_growth,
+            "sector_growth": sector_growth,
+            "raw_data": df
+        }
+    except Exception as e:
+        logger.error(f"Treemap pipeline failed: {e}")
+        return {
+            "hierarchy": pd.DataFrame(),
+            "company_growth": pd.DataFrame(),
+            "sector_growth": pd.DataFrame(),
+            "raw_data": pd.DataFrame()
+        }
 
-# ---------------------------------------------------------------------------
-# Convenience: run the full pipeline in one call
-# ---------------------------------------------------------------------------
-def run_treemap_pipeline(
-    start_date=None,
-    end_date=None,
-    size_metric: str = "Total_Volume",
-    min_trading_days: int = MIN_TRADING_DAYS,
-):
-    """
-    Runs steps 1-5 end to end. Used by pages/treemap.py.
+def get_node_trend_data(df: pd.DataFrame, node_id: str, company_growth: pd.DataFrame = None, group_by: str = "Sector") -> tuple:
+    """Computes trend data on-the-fly for the active node and market."""
+    if df.empty:
+        return pd.DataFrame(), pd.DataFrame()
+        
+    market_trend = df.groupby("Date")["Close"].mean().reset_index()
+    
+    if node_id == "NIFTY-50" or not node_id:
+        node_trend = pd.DataFrame()
+    elif "/" in node_id:
+        # Company
+        group, company = node_id.split("/", 1)
+        node_trend = df[df["Company"] == company].sort_values("Date").copy()
+    else:
+        # Group
+        if company_growth is not None and not company_growth.empty and group_by in company_growth.columns and group_by != "Sector":
+            companies_in_group = company_growth[company_growth[group_by] == node_id]['Company'].tolist()
+            node_trend = df[df["Company"].isin(companies_in_group)].groupby("Date")["Close"].mean().reset_index()
+        else:
+            node_trend = df[df["Sector"] == node_id].groupby("Date")["Close"].mean().reset_index()
+        
+    return market_trend, node_trend
 
-    Returns
-    -------
-    dict with keys:
-        'company_growth' : per-company CAGR/volume table
-        'sector_growth'  : per-sector aggregated table
-        'hierarchy'      : flat ids/parents/values table for the chart
-        'year_bounds'    : (min_year, max_year) of the full dataset
-    """
-    df = load_clean_data()
-    year_bounds = get_year_bounds(df)
+def compute_rolling_performance(df: pd.DataFrame, node_id: str, company_growth: pd.DataFrame = None, group_by: str = "Sector", window: int = 60) -> pd.DataFrame:
+    """Computes 60-day rolling return for the active node vs Market."""
+    if df.empty:
+        return pd.DataFrame()
+        
+    
+    # 1. Market Rolling
+    market_daily = df.groupby("Date")["Daily_Return"].mean().reset_index()
+    market_daily["Market_Rolling_Return"] = market_daily["Daily_Return"].rolling(window).apply(lambda x: (np.prod(1 + x) - 1), raw=True)
+    
+    # 2. Node Rolling
+    if node_id == "NIFTY-50" or not node_id:
+        return market_daily.dropna()
+        
+    if "/" in node_id:
+        group, company = node_id.split("/", 1)
+        node_df = df[df["Company"] == company].sort_values("Date")
+        node_daily = node_df[["Date", "Daily_Return"]].copy()
+    else:
+        if company_growth is not None and not company_growth.empty and group_by in company_growth.columns and group_by != "Sector":
+            comps = company_growth[company_growth[group_by] == node_id]['Company'].tolist()
+            node_daily = df[df["Company"].isin(comps)].groupby("Date")["Daily_Return"].mean().reset_index()
+        else:
+            node_daily = df[df["Sector"] == node_id].groupby("Date")["Daily_Return"].mean().reset_index()
+            
+    node_daily["Node_Rolling_Return"] = node_daily["Daily_Return"].rolling(window).apply(lambda x: (np.prod(1 + x) - 1), raw=True)
+    
+    merged = pd.merge(market_daily[["Date", "Market_Rolling_Return"]], node_daily[["Date", "Node_Rolling_Return"]], on="Date", how="inner")
+    return merged.dropna()
 
-    windowed = filter_by_date_range(df, start_date, end_date)
-    company_growth = compute_company_growth(windowed, min_trading_days=min_trading_days)
-    sector_growth = aggregate_sector_growth(company_growth)
-    hierarchy = build_hierarchy_dataframe(company_growth, sector_growth, size_metric=size_metric)
+def compute_risk_contribution(df: pd.DataFrame, node_id: str, company_growth: pd.DataFrame = None, group_by: str = "Sector") -> pd.DataFrame:
+    """Computes Marginal Contribution to Risk (MCR) for the assets in the node."""
+    if df.empty:
+        return pd.DataFrame()
+        
+    
+    # Determine which companies are in the portfolio
+    if node_id == "NIFTY-50" or not node_id:
+        comps = company_growth.nlargest(10, 'Total_Volume')['Company'].tolist() if company_growth is not None else df["Company"].unique()[:10]
+    elif "/" in node_id:
+        return pd.DataFrame() # Cannot decompose a single asset
+    else:
+        if company_growth is not None and not company_growth.empty and group_by in company_growth.columns and group_by != "Sector":
+            comps = company_growth[company_growth[group_by] == node_id]['Company'].tolist()
+        else:
+            comps = df[df["Sector"] == node_id]["Company"].unique().tolist()
+            
+    if len(comps) <= 1:
+        return pd.DataFrame()
+        
+    pivot_df = df[df["Company"].isin(comps)].pivot(index="Date", columns="Company", values="Daily_Return").fillna(0)
+    cov_matrix = pivot_df.cov() * 252
+    
+    weights = np.array([1/len(comps)] * len(comps))
+    
+    portfolio_var = np.dot(weights.T, np.dot(cov_matrix, weights))
+    if portfolio_var <= 0: return pd.DataFrame()
+    portfolio_vol = np.sqrt(portfolio_var)
+    
+    mcr = np.dot(cov_matrix, weights) / portfolio_vol
+    pcr = (weights * mcr) / portfolio_vol
+    
+    risk_df = pd.DataFrame({
+        "Company": pivot_df.columns,
+        "Weight": weights,
+        "MCR": mcr,
+        "PCR": pcr
+    }).sort_values("PCR", ascending=False)
+    
+    return risk_df
 
-    return {
-        "company_growth": company_growth,
-        "sector_growth": sector_growth,
-        "hierarchy": hierarchy,
-        "year_bounds": year_bounds,
-    }
-
-
-if __name__ == "__main__":
-    # Quick smoke test: python utils/analytics/treemap.py
-    result = run_treemap_pipeline()
-    print("Year bounds:", result["year_bounds"])
-    print("Companies:", len(result["company_growth"]))
-    print("Sectors:", len(result["sector_growth"]))
-    print(result["sector_growth"].sort_values("CAGR", ascending=False).to_string(index=False))
+def compute_market_breadth(df: pd.DataFrame, window: int = 60) -> pd.DataFrame:
+    """Computes % of stocks with positive rolling return."""
+    if df.empty:
+        return pd.DataFrame()
+        
+    pivot_df = df.pivot(index="Date", columns="Company", values="Daily_Return").fillna(0)
+    
+    rolling_returns = pivot_df.rolling(window).apply(lambda x: (np.prod(1 + x) - 1), raw=True)
+    positive_count = (rolling_returns > 0).sum(axis=1)
+    negative_count = (rolling_returns < 0).sum(axis=1)
+    total_count = rolling_returns.notna().sum(axis=1)
+    
+    breadth = pd.DataFrame({
+        "Date": pivot_df.index,
+        "Breadth": positive_count / total_count,
+        "Advancing": positive_count,
+        "Declining": negative_count,
+        "Total": total_count
+    })
+    return breadth.dropna()

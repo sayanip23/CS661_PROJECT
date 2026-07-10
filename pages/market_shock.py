@@ -1,43 +1,60 @@
 import dash
 from dash import html, dcc, Input, Output, callback, State
 import plotly.express as px
+import plotly.graph_objects as go
 from utils.analytics.market_shock import get_market_shocks, get_cross_section
+from utils.config import MODEBAR_CONFIG, ThemeManager
 
 dash.register_page(__name__, path="/market_shock", name="Market Shocks")
 
 
 layout = html.Div([
-    html.H2("Market Shock & Systemic Anomaly Detection"),
-    html.P("Identify extreme market events and observe how different stocks disperse during a crisis."),
+    html.H2("Market Shock & Systemic Anomaly Detection", className="fw-bold mb-1"),
+    html.P("Identify extreme market events and observe how different stocks disperse during a crisis.",
+           className="text-muted mb-4"),
     
     # --- CONTROL PANEL ---
     html.Div([
         html.Div([
-            # Z-Score Threshold Slider
+            # Z-Score Slider
             html.Div([
-                html.Label("Anomaly Threshold (Z-Score):", className="fw-bold mb-2", style={'white-space': 'nowrap'}),
-                dcc.Slider(
-                    id='z-threshold-slider',
-                    min=1.5, max=5.0, step=0.5, value=3.0, 
-                    marks={i/10: str(i/10) for i in range(15, 55, 5)},
-                    tooltip={"placement": "top", "always_visible": True},
-                    updatemode="mouseup"
-                )
-            ], className="col-12 col-md-6 mb-3 mb-md-0"), # Responsive columns
+                html.Label("Anomaly Threshold (Z-Score)", className="fw-bold mb-2 text-primary"),
+                html.Div([
+                    html.Span("1.5", className="static-bound-label text-muted fw-bold small me-2"),
+                    dcc.Slider(
+                        id='z-threshold-slider',
+                        min=1.5, max=5.0, step=0.5, value=3.0, 
+                        marks={i/10: {"label": str(i/10),
+                                      "style": {"color": "#9499a6", "fontSize": "13px",
+                                                "fontWeight": "600"}} for i in range(15, 55, 5)},
+                        updatemode="mouseup",
+                        className="slider-track flex-grow-1 mx-3"
+                    ),
+                    dcc.Input(id="z-threshold-box", type="number", min=1.5, max=5.0, step=0.5, value=3.0, className="form-control text-center p-0 me-2", style={"width": "55px", "fontWeight": "bold", "color": "black", "backgroundColor": "white", "height": "28px", "fontSize": "13px"}),
+                    html.Span("5.0", className="static-bound-label text-muted fw-bold small"),
+                ], className="slider-wrapper", style={"display": "flex", "alignItems": "center"})
+            ], className="col-12 col-md-6 mb-4 mb-md-0 pe-md-4"),
             
             # Rolling Window Slider
             html.Div([
-                html.Label("Rolling Window (Days):", className="fw-bold mb-2", style={'white-space': 'nowrap'}),
-                dcc.Slider(
-                    id='rolling-window-slider',
-                    min=10, max=60, step=10, value=20, 
-                    marks={i: f"{i}d" for i in range(10, 70, 10)},
-                    tooltip={"placement": "top", "always_visible": True},
-                    updatemode="mouseup"
-                )
-            ], className="col-12 col-md-6")
+                html.Label("Rolling Window (Days)", className="fw-bold mb-2 text-primary"),
+                html.Div([
+                    html.Span("10", className="static-bound-label text-muted fw-bold small me-2"),
+                    dcc.Slider(
+                        id='rolling-window-slider',
+                        min=10, max=60, step=10, value=20, 
+                        marks={i: {"label": f"{i}d",
+                                   "style": {"color": "#9499a6", "fontSize": "13px",
+                                             "fontWeight": "600"}} for i in range(10, 70, 10)},
+                        updatemode="mouseup",
+                        className="slider-track flex-grow-1 mx-3"
+                    ),
+                    dcc.Input(id="rolling-window-box", type="number", min=10, max=60, step=10, value=20, className="form-control text-center p-0 me-2", style={"width": "55px", "fontWeight": "bold", "color": "black", "backgroundColor": "white", "height": "28px", "fontSize": "13px"}),
+                    html.Span("60", className="static-bound-label text-muted fw-bold small"),
+                ], className="slider-wrapper", style={"display": "flex", "alignItems": "center"})
+            ], className="col-12 col-md-6 mb-4 ps-md-4")
         ], className="row")
-    ], className="card shadow-sm mb-4 p-3"),
+    ], className="card shadow-sm border-0 bg-surface mb-4 p-4"),
     
     # --- MACRO VIEW: Diverging Timeline ---
     html.Div([
@@ -45,28 +62,29 @@ layout = html.Div([
             dcc.Graph(
                 id="timeline-heatmap", 
                 style={"height": "450px"},
-                config={"displayModeBar": True, "responsive": True}
+                config=MODEBAR_CONFIG
             ),
-            type="default"
+            type="circle", color="var(--accent-primary)"
         )
-    ], className="card shadow-sm mb-4 p-3"),
+    ], className="card shadow-sm border-0 bg-surface mb-4 p-3"),
     
     # --- MICRO VIEW: Beeswarm Dispersion ---
     html.Div([
+        html.Div(id="shock-smart-narrative"),
         html.H4(
             id="beeswarm-title", 
-            children="Select a date spike on the timeline above to view stock dispersion.",
+            children="Hover over a date spike on the timeline above to view stock dispersion.",
             className="text-center text-muted mb-3"
         ),
         dcc.Loading(
             dcc.Graph(
                 id="beeswarm-plot", 
                 style={"height": "500px"},
-                config={"displayModeBar": False, "responsive": True}
+                config=MODEBAR_CONFIG
             ),
-            type="default" 
+            type="circle", color="var(--accent-primary)"
         )
-    ], className="card shadow-sm p-3")
+    ], className="card shadow-sm border-0 bg-surface p-3")
 ], className="container-fluid py-3")
 
 
@@ -76,21 +94,30 @@ layout = html.Div([
     Input("z-threshold-slider", "value"),
     Input("rolling-window-slider", "value"),
     State("timeline-heatmap", "relayoutData"),
-    State("timeline-heatmap", "figure") 
+    State("timeline-heatmap", "figure"),
+    Input("theme-store", "data"),
+    State("url", "pathname")
 )
-def update_timeline(z_threshold, rolling_window, relayout_data, current_fig):
+def update_timeline(z_threshold, rolling_window, relayout_data, current_fig, theme, pathname):
+    if pathname != "/market-shocks" and pathname != "/market_shock":
+        raise dash.exceptions.PreventUpdate
     
-    # Query the Database for Market Shocks based on the current slider values
     market_shocks = get_market_shocks(z_threshold, window=rolling_window)
     
+    if market_shocks.empty:
+        empty_fig = go.Figure().update_layout(title="No market shocks detected",
+                                              xaxis_visible=False, yaxis_visible=False, template=f"financial_{theme}")
+        return empty_fig
+
+    colors = ThemeManager.get_colors(theme)
+
     # Plot the timeline bar chart with updated data
     fig_timeline = px.bar(
         market_shocks,
         x="Date", y=["Crash_Severity", "Rally_Severity"], 
-        title=f"Systemic Market Volatility",
+        title="Systemic Market Volatility",
         labels={"value": "Severity Score", "variable": "Shock Type"},
-        color_discrete_map={"Crash_Severity": "#EF553B", "Rally_Severity": "#00CC96"},
-        template="plotly_white"
+        color_discrete_map={"Crash_Severity": colors["danger"], "Rally_Severity": colors["success"]}
     )
 
     newnames = {'Crash_Severity': 'Market Crash', 'Rally_Severity': 'Market Rally'}
@@ -100,8 +127,9 @@ def update_timeline(z_threshold, rolling_window, relayout_data, current_fig):
         clickmode='event+select', 
         barmode='relative', 
         yaxis_title="Severity Score",
-        margin=dict(b=50),
-        transition_duration=100
+        margin=dict(l=40, r=20, t=60, b=50),
+        transition_duration=100,
+        template=f"financial_{theme}"
     )
     fig_timeline.update_traces(marker_line_width=0)
     fig_timeline.update_yaxes(fixedrange=True)
@@ -109,6 +137,13 @@ def update_timeline(z_threshold, rolling_window, relayout_data, current_fig):
     fig_timeline.update_xaxes(
         rangeslider_visible=False, 
         rangeselector=dict(
+            y=1.05,
+            x=1.0,
+            xanchor="right",
+            yanchor="bottom",
+            bgcolor=colors["bg_surface"],
+            activecolor=colors["info"],
+            font=dict(color=colors["text_primary"]),
             buttons=list([
                 dict(count=1, label="1y", step="year", stepmode="backward"),
                 dict(count=5, label="5y", step="year", stepmode="backward"),
@@ -138,20 +173,48 @@ def update_timeline(z_threshold, rolling_window, relayout_data, current_fig):
 @callback(
     Output("beeswarm-plot", "figure"),
     Output("beeswarm-title", "children"),
-    Input("timeline-heatmap", "clickData"),
+    Output("shock-smart-narrative", "children"),
+    Input("timeline-heatmap", "hoverData", allow_optional=True),
+    Input("timeline-heatmap", "clickData", allow_optional=True),
     Input("z-threshold-slider", "value"),
-    Input("rolling-window-slider", "value")
+    Input("rolling-window-slider", "value"),
+    Input("global-state", "data"),
+    Input("theme-store", "data"),
+    State("url", "pathname")
 )
-def update_beeswarm_dispersion(clickData, z_threshold, rolling_window):
-    if not clickData:
-        empty_fig = px.scatter(title="Waiting for selection...")
-        empty_fig.update_layout(template="plotly_white", xaxis_visible=False, yaxis_visible=False)
-        return empty_fig, "Select a date spike on the timeline above to view stock dispersion."
+def update_beeswarm_dispersion(hoverData, clickData, z_threshold, rolling_window, global_state, theme, pathname):
+    if pathname != "/market-shocks" and pathname != "/market_shock":
+        raise dash.exceptions.PreventUpdate
+        
+    from components.narrative import generate_smart_narrative
+    
+    # Prefer hover, fallback to click
+    interaction_data = hoverData or clickData
+    
+    if not interaction_data:
+        empty_fig = go.Figure().update_layout(
+            xaxis_visible=False, yaxis_visible=False,
+            template=f"financial_{theme}",
+            annotations=[dict(text="Hover over a date spike on the timeline to view stock dispersion.",
+                              xref="paper", yref="paper", x=0.5, y=0.5, showarrow=False,
+                              font=dict(size=14, color=ThemeManager.get_colors(theme)["text_secondary"]))]
+        )
+        return empty_fig, "Hover over a date spike on the timeline above to view stock dispersion.", html.Div()
 
-    target_date = clickData["points"][0]["x"]
+    target_date = interaction_data["points"][0]["x"]
     
     # Query the Database for Cross-Section Data on the selected date
     cross_section = get_cross_section(target_date, window=rolling_window)
+
+    if global_state and global_state.get("sectors"):
+        cross_section = cross_section[cross_section["Sector"].isin(global_state["sectors"])]
+
+    if cross_section.empty:
+        empty_fig = go.Figure().update_layout(title="No data available",
+                                              xaxis_visible=False, yaxis_visible=False, template=f"financial_{theme}")
+        return empty_fig, "No data available for the selected date and filters.", html.Div()
+
+    colors = ThemeManager.get_colors(theme)
 
     # Plot the Beeswarm Dispersion
     fig_beeswarm = px.strip(
@@ -162,18 +225,71 @@ def update_beeswarm_dispersion(clickData, z_threshold, rolling_window):
         stripmode="overlay"
     )
 
-    fig_beeswarm.add_hline(y=0, line_dash="solid", line_color="black", opacity=0.3)
-    fig_beeswarm.add_hline(y=z_threshold, line_dash="dash", line_color="red", annotation_text=f"+{z_threshold}σ")
-    fig_beeswarm.add_hline(y=-z_threshold, line_dash="dash", line_color="red", annotation_text=f"-{z_threshold}σ")
+    fig_beeswarm.add_hline(y=0, line_dash="solid", line_color=colors["crosshair"], opacity=0.8)
+    fig_beeswarm.add_hline(y=z_threshold, line_dash="dash", line_color=colors["danger"], annotation_text=f"+{z_threshold}σ")
+    fig_beeswarm.add_hline(y=-z_threshold, line_dash="dash", line_color=colors["danger"], annotation_text=f"-{z_threshold}σ")
     
     fig_beeswarm.update_layout(
-        template="plotly_white",
         showlegend=False, 
         yaxis_title="Volatility (Z-Score)",
-        transition_duration=100
+        transition_duration=100,
+        template=f"financial_{theme}"
     )
     
     fig_beeswarm.update_yaxes(fixedrange=True)
 
     clean_date = target_date.split('T')[0]
-    return fig_beeswarm, f"Sector Dispersion on {clean_date}"
+    
+    narrative = html.Div(f"Cross-sectional shock variance on {clean_date}", className="text-muted small")
+    if not cross_section.empty:
+        max_shock = cross_section.loc[cross_section['Z_Score'].abs().idxmax()]
+        narrative = html.Div([
+            html.I(className="bi bi-magic text-danger me-2"),
+            html.Span(f"On {clean_date}, ", className="text-muted small"),
+            html.B(max_shock['Company'], className="text-danger small"), 
+            html.Span(f" exhibited maximum anomaly with a Z-Score of {max_shock['Z_Score']:+.2f}σ.", className="text-muted small")
+        ], className="p-2 border border-danger border-opacity-25 rounded bg-danger bg-opacity-10 mb-2 mt-0")
+        
+    return fig_beeswarm, f"Sector Dispersion on {clean_date}", narrative
+
+dash.clientside_callback(
+    "function(val, box) {\n"
+    "    const ctx = dash_clientside.callback_context;\n"
+    "    if (!ctx.triggered.length) return [val, val];\n"
+    "    const trigger = ctx.triggered[0].prop_id;\n"
+    "    if (trigger === 'z-threshold-slider.value') {\n"
+    "        return [val, dash_clientside.no_update];\n"
+    "    } else {\n"
+    "        let v = parseFloat(box) || 3.0;\n"
+    "        if (v < 1.5) v = 1.5;\n"
+    "        if (v > 5.0) v = 5.0;\n"
+    "        return [dash_clientside.no_update, v];\n"
+    "    }\n"
+    "}",
+    Output("z-threshold-box", "value"),
+    Output("z-threshold-slider", "value"),
+    Input("z-threshold-slider", "value"),
+    Input("z-threshold-box", "value")
+)
+
+dash.clientside_callback(
+    "function(val, box) {\n"
+    "    const ctx = dash_clientside.callback_context;\n"
+    "    if (!ctx.triggered.length) return [val, val];\n"
+    "    const trigger = ctx.triggered[0].prop_id;\n"
+    "    if (trigger === 'rolling-window-slider.value') {\n"
+    "        return [val, dash_clientside.no_update];\n"
+    "    } else {\n"
+    "        let v = parseInt(box) || 20;\n"
+    "        if (v < 10) v = 10;\n"
+    "        if (v > 60) v = 60;\n"
+    "        return [dash_clientside.no_update, v];\n"
+    "    }\n"
+    "}",
+    Output("rolling-window-box", "value"),
+    Output("rolling-window-slider", "value"),
+    Input("rolling-window-slider", "value"),
+    Input("rolling-window-box", "value")
+)
+
+

@@ -6,24 +6,23 @@ Dendrograms visualization (Task 4.1).
 
 Pipeline:
     load_clean_data()
-        -> compute_daily_returns()
+        -> compute_daily_returns()   [from utils.analytics.shared]
         -> create_pivot_table()
         -> compute_correlation_matrix()
         -> perform_agglomerative_clustering()
         -> get_clustered_matrix()
 """
 
-
-
 import numpy as np
 import pandas as pd
 from utils.database import run_query
+from utils.logger import get_logger
+from utils.analytics.shared import compute_daily_returns, safe_lru_cache
+
+logger = get_logger(__name__)
 from sklearn.cluster import AgglomerativeClustering
 from scipy.cluster.hierarchy import linkage, dendrogram as scipy_dendrogram
 from scipy.spatial.distance import squareform
-
-
-
 
 
 # Minimum number of overlapping trading days required for a correlation
@@ -34,6 +33,7 @@ MIN_OVERLAP_PERIODS = 60
 # ---------------------------------------------------------------------------
 # Step 1: Load Data
 # ---------------------------------------------------------------------------
+@safe_lru_cache(maxsize=1)
 def load_clean_data() -> pd.DataFrame:
     """
     Loads the cleaned stock dataset from DuckDB.
@@ -56,30 +56,6 @@ def load_clean_data() -> pd.DataFrame:
     df = run_query(query)
 
     df["Date"] = pd.to_datetime(df["Date"])
-
-    return df
-
-# ---------------------------------------------------------------------------
-# Step 2: Daily Returns
-# ---------------------------------------------------------------------------
-def compute_daily_returns(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Computes daily percentage returns per company:
-
-        Return_t = (Close_t - Close_(t-1)) / Close_(t-1) * 100
-
-    Returns
-    -------
-    pd.DataFrame
-        Original dataframe with an added 'Daily_Return' column.
-        The first trading day of each company will have NaN (no prior close),
-        which is expected and handled downstream.
-    """
-    df = df.copy()
-
-    df["Daily_Return"] = (
-        df.groupby("Company")["Close"].pct_change() * 100
-    )
 
     return df
 
@@ -237,12 +213,14 @@ def get_clustered_matrix(
 
 
 # ---------------------------------------------------------------------------
-# Convenience: run the full pipeline in one call
+# Pipeline Orchestrator
 # ---------------------------------------------------------------------------
+@safe_lru_cache(maxsize=32)
 def run_correlation_pipeline(
-    n_clusters: int = 5,
-    linkage_method: str = "average",
-):
+    n_clusters: int = 4, linkage_method: str = "average"
+) -> dict:
+    if n_clusters is None:
+        n_clusters = 4
     """
     Runs steps 1-6 end to end. Used by pages/correlation.py.
 
@@ -255,22 +233,32 @@ def run_correlation_pipeline(
         'cluster_result'    : output of perform_agglomerative_clustering()
         'clustered_matrix'  : correlation matrix reordered by dendrogram leaves
     """
-    df = load_clean_data()
-    df = compute_daily_returns(df)
-    pivot = create_pivot_table(df)
-    corr_matrix = compute_correlation_matrix(pivot)
-    cluster_result = perform_agglomerative_clustering(
-        corr_matrix, n_clusters=n_clusters, linkage_method=linkage_method
-    )
-    clustered_matrix = get_clustered_matrix(corr_matrix, cluster_result)
+    try:
+        df = load_clean_data()
+        df = compute_daily_returns(df)
+        pivot = create_pivot_table(df)
+        corr_matrix = compute_correlation_matrix(pivot)
+        cluster_result = perform_agglomerative_clustering(
+            corr_matrix, n_clusters=n_clusters, linkage_method=linkage_method
+        )
+        clustered_matrix = get_clustered_matrix(corr_matrix, cluster_result)
 
-    return {
-        "raw_df": df,
-        "pivot": pivot,
-        "corr_matrix": corr_matrix,
-        "cluster_result": cluster_result,
-        "clustered_matrix": clustered_matrix,
-    }
+        return {
+            "raw_df": df,
+            "pivot": pivot,
+            "corr_matrix": corr_matrix,
+            "cluster_result": cluster_result,
+            "clustered_matrix": clustered_matrix,
+        }
+    except Exception as e:
+        logger.error(f"Correlation pipeline failed: {e}")
+        return {
+            "raw_df": pd.DataFrame(),
+            "pivot": pd.DataFrame(),
+            "corr_matrix": pd.DataFrame(),
+            "cluster_result": {"dendrogram": {}, "labels": [], "n_clusters": n_clusters},
+            "clustered_matrix": pd.DataFrame(),
+        }
 
 
 if __name__ == "__main__":

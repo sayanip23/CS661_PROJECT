@@ -20,37 +20,33 @@ import plotly.graph_objects as go
 from scipy.cluster.hierarchy import dendrogram as scipy_dendrogram
 
 from utils.analytics.correlation import run_correlation_pipeline
+from utils.config import DEFAULT_N_CLUSTERS, DEFAULT_LINKAGE_METHOD, get_corr_colorscale, MODEBAR_CONFIG, ThemeManager
 
 dash.register_page(__name__, path="/correlation")
 
 
+from utils.database import run_query
+
 # ---------------------------------------------------------------------------
 # Load + run the analytics pipeline once at import time.
-# The underlying dataset is static, so there's no need to recompute the
-# full correlation/clustering pipeline on every callback.
+# We no longer run the heavy pipeline on import. We only fetch the unique 
+# companies for the dropdown using a fast SQL query.
 # ---------------------------------------------------------------------------
-PIPELINE = run_correlation_pipeline(n_clusters=5, linkage_method="average")
+def _get_all_companies():
+    query = "SELECT DISTINCT Company FROM clean_stock_data ORDER BY Company"
+    return run_query(query)["Company"].tolist()
 
-RAW_DF = PIPELINE["raw_df"]
-ALL_COMPANIES = sorted(RAW_DF["Company"].unique())
+try:
+    ALL_COMPANIES = _get_all_companies()
+except Exception:
+    ALL_COMPANIES = []
 
-DEFAULT_N_CLUSTERS = 5
-DEFAULT_LINKAGE = "average"
-
-# Diverging colorscale: blue (negative) -> white (zero) -> red (positive)
-CORR_COLORSCALE = [
-    [0.0, "rgb(33,102,172)"],
-    [0.25, "rgb(103,169,207)"],
-    [0.5, "rgb(247,247,247)"],
-    [0.75, "rgb(239,138,98)"],
-    [1.0, "rgb(178,24,43)"],
-]
 
 
 # ---------------------------------------------------------------------------
 # create_heatmap()
 # ---------------------------------------------------------------------------
-def create_heatmap(clustered_matrix, order):
+def create_heatmap(clustered_matrix, order, theme="dark"):
     """
     Builds the Plotly heatmap of the (dendrogram-reordered) correlation
     matrix. Stocks x stocks, colored blue (negative) -> white (zero) ->
@@ -63,7 +59,7 @@ def create_heatmap(clustered_matrix, order):
             z=z,
             x=order,
             y=order,
-            colorscale=CORR_COLORSCALE,
+            colorscale=get_corr_colorscale(theme),
             zmin=-1,
             zmax=1,
             zmid=0,
@@ -91,6 +87,7 @@ def create_heatmap(clustered_matrix, order):
         dragmode="select",
         margin=dict(l=140, r=20, t=10, b=140),
         height=650,
+        template=f"financial_{theme}"
     )
 
     return fig
@@ -99,7 +96,7 @@ def create_heatmap(clustered_matrix, order):
 # ---------------------------------------------------------------------------
 # create_dendrogram()
 # ---------------------------------------------------------------------------
-def create_dendrogram(cluster_result):
+def create_dendrogram(cluster_result, theme="dark"):
     """
     Builds a Plotly line-segment dendrogram from the scipy linkage matrix,
     using the same leaf order as the heatmap so the two stay visually
@@ -131,7 +128,7 @@ def create_dendrogram(cluster_result):
     # so it lines up with the heatmap's categorical x positions.
     for icoord, dcoord, color in zip(dendro["icoord"], dendro["dcoord"], dendro["color_list"]):
         x = [(v / 10.0) - 0.5 for v in icoord]
-        plot_color = MPL_COLOR_MAP.get(color, color if str(color).startswith("#") else "#333333")
+        plot_color = MPL_COLOR_MAP.get(color, color if str(color).startswith("#") else ThemeManager.get_colors(theme)["text_secondary"])
         fig.add_trace(
             go.Scatter(
                 x=x,
@@ -160,6 +157,7 @@ def create_dendrogram(cluster_result):
         margin=dict(l=140, r=20, t=20, b=0),
         height=220,
         showlegend=False,
+        template=f"financial_{theme}"
     )
 
     return fig
@@ -168,7 +166,7 @@ def create_dendrogram(cluster_result):
 # ---------------------------------------------------------------------------
 # create_time_series()
 # ---------------------------------------------------------------------------
-def create_time_series(df, selected_companies):
+def create_time_series(df, selected_companies, theme="dark"):
     """
     Multi-line time series of closing prices for the given list of
     company names. Shows a placeholder message if none are selected.
@@ -179,6 +177,7 @@ def create_time_series(df, selected_companies):
         fig.update_layout(
             height=350,
             margin=dict(l=60, r=20, t=30, b=40),
+            template=f"financial_{theme}",
             annotations=[
                 dict(
                     text="Drag-select a region on the heatmap above (or use the dropdown) "
@@ -188,7 +187,7 @@ def create_time_series(df, selected_companies):
                     x=0.5,
                     y=0.5,
                     showarrow=False,
-                    font=dict(size=13, color="gray"),
+                    font=dict(size=13, color=ThemeManager.get_colors(theme)["text_secondary"]),
                 )
             ],
         )
@@ -213,6 +212,7 @@ def create_time_series(df, selected_companies):
         yaxis_title="Closing Price",
         legend=dict(orientation="h", y=1.02, x=0),
         hovermode="x unified",
+        template=f"financial_{theme}"
     )
 
     return fig
@@ -224,6 +224,7 @@ def create_time_series(df, selected_companies):
 layout = dbc.Container(
     [
         html.H2("Clustered Correlation Matrix Heatmap", className="fw-bold mt-3"),
+        html.Div(id="correlation-smart-narrative"),
         html.P(
             "Hierarchical clustering groups stocks with similar daily-return behavior, "
             "avoiding the 'hairball' of a force-directed graph. Drag-select a block of "
@@ -235,15 +236,21 @@ layout = dbc.Container(
             [
                 dbc.Col(
                     [
-                        html.Label("Number of Clusters", className="fw-bold"),
-                        dcc.Slider(
-                            id="n-clusters-slider",
-                            min=2,
-                            max=10,
-                            step=1,
-                            value=DEFAULT_N_CLUSTERS,
-                            marks={i: str(i) for i in range(2, 11)},
-                        ),
+                        html.Label("Number of Clusters", className="fw-bold mb-2"),
+                        html.Div([
+                            html.Span("2", className="static-bound-label text-muted fw-bold small me-2"),
+                            dcc.Slider(
+                                id="n-clusters-slider",
+                                min=2,
+                                max=10,
+                                step=1,
+                                value=DEFAULT_N_CLUSTERS,
+                                marks={i: {"label": str(i), "style": {"color": "#9499a6", "fontSize": "14px", "fontWeight": "600"}} for i in range(2, 11)},
+                                className="slider-track flex-grow-1 mx-3"
+                            ),
+                            dcc.Input(id="n-clusters-box", type="number", min=2, max=10, step=1, value=DEFAULT_N_CLUSTERS, className="form-control text-center p-0 me-2", style={"width": "55px", "fontWeight": "bold", "color": "black", "backgroundColor": "white", "height": "28px", "fontSize": "13px"}),
+                            html.Span("10", className="static-bound-label text-muted fw-bold small"),
+                        ], className="slider-wrapper", style={"display": "flex", "alignItems": "center"}),
                     ],
                     md=6,
                 ),
@@ -251,7 +258,7 @@ layout = dbc.Container(
                     [
                         html.Label("Or pick companies directly", className="fw-bold"),
                         dcc.Dropdown(
-                            id="company-selector",
+                            id={"type": "company-selector", "index": "main"},
                             options=[{"label": c, "value": c} for c in ALL_COMPANIES],
                             value=[],
                             multi=True,
@@ -261,20 +268,24 @@ layout = dbc.Container(
                     md=6,
                 ),
             ],
-            className="mb-3",
+            className="shadow-sm rounded-4 border-0 mb-4 bg-surface p-4",
         ),
 
-        dcc.Loading(
-            dcc.Graph(id="correlation-dendrogram", config={"displayModeBar": False}),
-        ),
-        dcc.Loading(
-            dcc.Graph(id="correlation-heatmap", config={"displayModeBar": True}),
+        html.Div(
+            [
+                dcc.Loading(dcc.Graph(id="correlation-dendrogram", config=MODEBAR_CONFIG), type="circle", color="var(--accent-primary)"),
+                dcc.Loading(dcc.Graph(id="correlation-heatmap", config=MODEBAR_CONFIG), type="circle", color="var(--accent-primary)"),
+            ],
+            className="card shadow-sm border-0 bg-surface mb-4"
         ),
 
         html.Hr(),
         html.H4("Closing Price Comparison", className="fw-bold"),
-        dcc.Loading(
-            dcc.Graph(id="correlation-time-series"),
+        html.Div(
+            [
+                dcc.Loading(dcc.Graph(id="correlation-time-series", config=MODEBAR_CONFIG), type="circle", color="var(--accent-primary)")
+            ],
+            className="card shadow-sm border-0 bg-surface p-3"
         ),
     ],
     fluid=True,
@@ -282,53 +293,114 @@ layout = dbc.Container(
 
 
 # ---------------------------------------------------------------------------
-# register_callbacks()
+# Callbacks
 # ---------------------------------------------------------------------------
-def register_callbacks():
+@callback(
+    Output("correlation-heatmap", "figure"),
+    Output("correlation-dendrogram", "figure"),
+    Input("n-clusters-slider", "value"),
+    Input("theme-store", "data")
+)
+def update_clustering(n_clusters, theme):
+    """Re-clusters (sklearn) and recolors the dendrogram (scipy) when the
+    slider changes. Leaf order stays stable since it comes from the
+    linkage matrix, not from the chosen number of flat clusters."""
+    import plotly.express as px
+    import plotly.graph_objects as go
+    
+    result = run_correlation_pipeline(n_clusters=n_clusters, linkage_method=DEFAULT_LINKAGE_METHOD)
+    
+    if "order" not in result["cluster_result"]:
+        empty_fig = go.Figure().update_layout(title="No data available", xaxis_visible=False, yaxis_visible=False)
+        return empty_fig, empty_fig
 
-    @callback(
-        Output("correlation-heatmap", "figure"),
-        Output("correlation-dendrogram", "figure"),
-        Input("n-clusters-slider", "value"),
+    order = result["cluster_result"]["order"]
+
+    heatmap_fig = create_heatmap(result["clustered_matrix"], order, theme)
+    dendrogram_fig = create_dendrogram(result["cluster_result"], theme)
+
+    return heatmap_fig, dendrogram_fig
+
+from dash import ALL
+
+@callback(
+    Output({"type": "company-selector", "index": ALL}, "value"),
+    Output("global-state", "data", allow_duplicate=True),
+    Input("correlation-heatmap", "selectedData", allow_optional=True),
+    Input("global-state", "data"),
+    State({"type": "company-selector", "index": ALL}, "value", allow_optional=True),
+    State("url", "pathname"),
+    prevent_initial_call=True,
+)
+def heatmap_brush_to_dropdown(selected_data, global_state, current_value_list, pathname):
+    if pathname != "/correlation":
+        raise dash.exceptions.PreventUpdate
+        
+    current_value = current_value_list[0] if current_value_list else []
+        
+    if not global_state: global_state = {"sectors": [], "companies": []}
+    
+    ctx = dash.callback_context
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    
+    if trigger_id == "global-state":
+        # Merge global companies into current selection
+        combined = list(set((current_value or []) + global_state.get("companies", [])))
+        return [combined], dash.no_update
+
+    # Otherwise triggered by heatmap selection
+    if not selected_data or "points" not in selected_data or not selected_data["points"]:
+        return [current_value or []], dash.no_update
+
+    companies = set(current_value or [])
+    for point in selected_data["points"]:
+        companies.add(point["x"])
+        companies.add(point["y"])
+        
+    updated = list(companies)
+    return [updated], global_state
+
+@callback(
+    Output("correlation-time-series", "figure"),
+    Output("correlation-smart-narrative", "children"),
+    Input({"type": "company-selector", "index": ALL}, "value"),
+    Input("theme-store", "data")
+)
+def update_time_series(company_selections, theme):
+    from components.narrative import generate_smart_narrative
+    
+    selected_companies = company_selections[0] if company_selections else []
+    
+    result = run_correlation_pipeline(
+        n_clusters=DEFAULT_N_CLUSTERS, linkage_method=DEFAULT_LINKAGE_METHOD
     )
-    def update_clustering(n_clusters):
-        """Re-clusters (sklearn) and recolors the dendrogram (scipy) when the
-        slider changes. Leaf order stays stable since it comes from the
-        linkage matrix, not from the chosen number of flat clusters."""
-        result = run_correlation_pipeline(n_clusters=n_clusters, linkage_method=DEFAULT_LINKAGE)
-        order = result["cluster_result"]["order"]
+    
+    fig = create_time_series(result["raw_df"], selected_companies, theme)
+    
+    # Generate Narrative
+    subset_df = result["raw_df"]
+    if selected_companies:
+        subset_df = subset_df[subset_df["Company"].isin(selected_companies)]
+    narrative = generate_smart_narrative(subset_df, context="correlation")
+    return fig, narrative
 
-        heatmap_fig = create_heatmap(result["clustered_matrix"], order)
-        dendrogram_fig = create_dendrogram(result["cluster_result"])
+dash.clientside_callback(
+    "function(val, box) {\n"
+    "    const ctx = dash_clientside.callback_context;\n"
+    "    if (!ctx.triggered.length) return [val, val];\n"
+    "    const trigger = ctx.triggered[0].prop_id;\n"
+    "    if (trigger === 'n-clusters-slider.value') {\n"
+    "        return [val, dash_clientside.no_update];\n"
+    "    } else {\n"
+    "        let v = parseInt(box) || 5;\n"
+    "        if (v < 2) v = 2;\n"
+    "        if (v > 10) v = 10;\n"
+    "        return [dash_clientside.no_update, v];\n"
+    "    }\n"
+    "}",
+    Output("n-clusters-box", "value"),
+    Output("n-clusters-slider", "value"),
+    Input("n-clusters-slider", "value"),
+    Input("n-clusters-box", "value")
+)
 
-        return heatmap_fig, dendrogram_fig
-
-    @callback(
-        Output("company-selector", "value"),
-        Input("correlation-heatmap", "selectedData"),
-        State("company-selector", "value"),
-        prevent_initial_call=True,
-    )
-    def heatmap_brush_to_dropdown(selected_data, current_value):
-        """Box-selecting (brushing) a block of cells on the heatmap pushes
-        the involved company names into the dropdown, which in turn drives
-        the time-series chart below."""
-        if not selected_data or "points" not in selected_data or not selected_data["points"]:
-            return current_value or []
-
-        companies = set()
-        for point in selected_data["points"]:
-            companies.add(point["x"])
-            companies.add(point["y"])
-
-        return sorted(companies)
-
-    @callback(
-        Output("correlation-time-series", "figure"),
-        Input("company-selector", "value"),
-    )
-    def update_time_series(selected_companies):
-        return create_time_series(RAW_DF, selected_companies or [])
-
-
-register_callbacks()
