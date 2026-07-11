@@ -4,6 +4,9 @@ import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 from utils.analytics.treemap import run_treemap_pipeline, get_node_trend_data, compute_rolling_performance, compute_risk_contribution, compute_market_breadth
 from utils.config import get_quant_colorscale, MODEBAR_CONFIG, ThemeManager
+from utils.visuals import apply_shared_layout, create_empty_figure
+from components.shared.drawer import create_offcanvas_drawer, create_drawer_footer
+from components.shared.filters import create_year_range_filter, create_metric_toggle
 import numpy as np
 
 dash.register_page(__name__, path="/treemap")
@@ -138,14 +141,7 @@ def create_growth_figure(hierarchy_df, size_metric, color_metric, start_year, en
         pathbar=dict(visible=True, textfont=dict(family="JetBrains Mono, monospace", size=pathbar_font)),
         textfont=dict(family="JetBrains Mono, monospace", color=text_colors, size=base_font),
     ))
-    fig.update_layout(
-        template=f"financial_{theme}",
-        margin=dict(l=0, r=0, t=35 if is_fullscreen else 25, b=0),
-        paper_bgcolor="rgba(0,0,0,0)" if is_fullscreen else colors["bg_surface"], 
-        plot_bgcolor="rgba(0,0,0,0)" if is_fullscreen else colors["bg_surface"],
-        uirevision=uirevision,
-        hoverlabel=dict(font_size=hover_font)
-    )
+    fig = apply_shared_layout(fig, theme=theme, margin=dict(l=0, r=0, t=35 if is_fullscreen else 25, b=0), uirevision=uirevision, hoverlabel=dict(font_size=hover_font))
     return fig
 
 fullscreen_modal = dbc.Modal(
@@ -172,13 +168,10 @@ fullscreen_modal = dbc.Modal(
     style={"backdropFilter": "blur(4px)"}
 )
 
-filter_drawer = dbc.Offcanvas(
-    id="filter-drawer",
+filter_drawer = create_offcanvas_drawer(
+    id_prefix="filter",
     title="Dashboard Filters",
-    is_open=False,
-    placement="end",
-    style={"width": "350px", "backdropFilter": "blur(4px)"},
-    children=[
+    content=[
         html.Div([
             html.H6("General", className="text-uppercase text-muted small fw-bold mb-3 border-bottom border-secondary border-opacity-25 pb-1"),
             
@@ -197,48 +190,26 @@ filter_drawer = dbc.Offcanvas(
                 style={"color": "black"}
             ),
             
-            html.Div("Year Range", className="fw-bold text-muted small mb-1"),
-            html.Div([
-                html.Span("2000", className="static-bound-label text-muted fw-bold small me-2"),
-                dcc.Input(id="year-range-min-box", type="number", min=2000, max=2022, step=1, value=2000, className="form-control text-center p-0", style={"width": "45px", "fontWeight": "bold", "color": "black", "backgroundColor": "white", "height": "24px", "fontSize": "12px"}),
-                dcc.RangeSlider(
-                    id="year-range-slider", min=2000, max=2022, step=1, 
-                    value=[2000, 2022],
-                    marks=None, tooltip={"placement": "bottom", "always_visible": False},
-                    className="slider-track flex-grow-1 mx-2"
-                ),
-                dcc.Input(id="year-range-max-box", type="number", min=2000, max=2022, step=1, value=2022, className="form-control text-center p-0", style={"width": "45px", "fontWeight": "bold", "color": "black", "backgroundColor": "white", "height": "24px", "fontSize": "12px"}),
-                html.Span("2022", className="static-bound-label text-muted fw-bold small ms-2"),
-            ], className="d-flex align-items-center mb-4"),
+            create_year_range_filter("year-range", 2000, 2022),
             
             html.H6("Metrics", className="text-uppercase text-muted small fw-bold mb-3 border-bottom border-secondary border-opacity-25 pb-1 mt-4"),
             
-            html.Div("Color Metric", className="fw-bold text-muted small mb-1"),
-            dbc.RadioItems(
-                id="color-metric-toggle",
-                options=[{"label": "Growth", "value": "cagr"},
-                         {"label": "Sharpe", "value": "sharpe"}],
-                value="cagr", inline=True, className="mb-3 btn-group w-100", 
-                inputClassName="btn-check", 
-                labelClassName="btn btn-outline-primary btn-sm transition-all py-1"
+            create_metric_toggle(
+                id_prefix="color-metric-toggle",
+                options=[{"label": "Growth", "value": "cagr"}, {"label": "Sharpe", "value": "sharpe"}],
+                default_value="cagr",
+                label="Color Metric"
             ),
             
-            html.Div("Size Metric", className="fw-bold text-muted small mb-1"),
-            dbc.RadioItems(
-                id="size-metric-toggle",
-                options=[{"label": "Volume", "value": "Total_Volume"},
-                         {"label": "Turnover", "value": "Total_Turnover"}],
-                value="Total_Volume", inline=True, className="mb-4 btn-group w-100", 
-                inputClassName="btn-check", 
-                labelClassName="btn btn-outline-primary btn-sm transition-all py-1"
+            create_metric_toggle(
+                id_prefix="size-metric-toggle",
+                options=[{"label": "Volume", "value": "Total_Volume"}, {"label": "Turnover", "value": "Total_Turnover"}],
+                default_value="Total_Volume",
+                label="Size Metric"
             ),
         ], className="d-flex flex-column h-100"),
         
-        # Bottom sticky actions
-        html.Div([
-            dbc.Button("Reset Defaults", id="reset-filters-btn", color="link", className="text-muted text-decoration-none flex-grow-1 me-2 btn-sm"),
-            dbc.Button("Apply Filters", id="apply-filters-btn", color="primary", className="fw-bold px-4 btn-sm shadow-sm"),
-        ], className="d-flex border-top border-secondary border-opacity-25 pt-3 mt-auto", style={"position": "absolute", "bottom": "20px", "left": "20px", "right": "20px"})
+        create_drawer_footer("apply-filters-btn", "reset-filters-btn")
     ]
 )
 
@@ -312,7 +283,7 @@ def update_treemap_figure(filter_state, reset_clicks, theme):
     res = run_treemap_pipeline(f"{start_year}-01-01", f"{end_year}-12-31", size_metric, group_by)
     
     if res["hierarchy"].empty:
-        empty_fig = go.Figure().update_layout(title="No data available", xaxis_visible=False, yaxis_visible=False)
+        empty_fig = create_empty_figure("No data available", theme=theme)
         return empty_fig, empty_fig
         
     ctx = dash.callback_context
@@ -397,9 +368,44 @@ def update_active_node(click_data_norm, click_data_full, reset_clicks, current_n
         
     return current_node
 
+dash.clientside_callback(
+    """
+    function(node) {
+        if (!node || node === "NIFTY-50") {
+            return dash_clientside.no_update;
+        }
+        const now = Date.now();
+        if (!window.__treemapLastClick) {
+            window.__treemapLastClick = { value: node, ts: now };
+            return dash_clientside.no_update;
+        }
+        const last = window.__treemapLastClick;
+        let isDouble = false;
+        if (last.value === node && (now - last.ts) < 500) {
+            isDouble = true;
+        }
+        window.__treemapLastClick = { value: node, ts: now };
+        
+        if (isDouble) {
+            let val = node;
+            if (node.includes("/")) {
+                val = node.split("/")[1];
+                return { type: "OPEN_COMPANY_DRAWER", payload: "Company:" + val };
+            } else {
+                return { type: "OPEN_COMPANY_DRAWER", payload: "Sector:" + val };
+            }
+        }
+        return dash_clientside.no_update;
+    }
+    """,
+    Output("event-bus", "data", allow_duplicate=True),
+    Input("treemap-active-node", "data"),
+    prevent_initial_call=True
+)
+
 def create_scatter_fig(comp_df, node_id, group_by, theme="dark"):
     colors = ThemeManager.get_colors(theme)
-    if comp_df.empty: return go.Figure().update_layout(title="No data", template=f"financial_{theme}", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    if comp_df.empty: return create_empty_figure("No data", theme=theme)
     fig = go.Figure()
     
     # Filter for active group if needed
@@ -421,33 +427,33 @@ def create_scatter_fig(comp_df, node_id, group_by, theme="dark"):
                     line=dict(width=1.5, color=colors["bg_surface"])),
         textposition="top center", hovertemplate="%{text}<br>Vol: %{x:.1%}<br>CAGR: %{y:.1%}<extra></extra>"
     ))
-    fig.update_layout(title="Cross-Sectional Risk vs Return", template=f"financial_{theme}", margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis_title="Annualized Volatility", yaxis_title="CAGR")
+    fig = apply_shared_layout(fig, title="Cross-Sectional Risk vs Return", theme=theme, margin=dict(l=0,r=0,t=40,b=20), xaxis_title="Annualized Volatility", yaxis_title="CAGR")
     return fig
 
 def create_rolling_fig(raw_df, node_id, comp_df, group_by, theme="dark"):
     colors = ThemeManager.get_colors(theme)
     roll_df = compute_rolling_performance(raw_df, node_id, comp_df, group_by)
-    if roll_df.empty: return go.Figure().update_layout(title="No data", template=f"financial_{theme}", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    if roll_df.empty: return create_empty_figure("No data", theme=theme)
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=roll_df["Date"], y=roll_df["Market_Rolling_Return"], name="Market (NIFTY-50)", line=dict(color=colors["text_secondary"], width=2)))
     if "Node_Rolling_Return" in roll_df.columns:
         fig.add_trace(go.Scatter(x=roll_df["Date"], y=roll_df["Node_Rolling_Return"], name=node_id, line=dict(color=colors["success"], width=2)))
-    fig.update_layout(title="60-Day Rolling Return", template=f"financial_{theme}", margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", hovermode="x unified")
+    fig = apply_shared_layout(fig, title="60-Day Rolling Return", theme=theme, margin=dict(l=0,r=0,t=40,b=20), hovermode="x unified")
     return fig
 
 def create_risk_fig(raw_df, node_id, comp_df, group_by, theme="dark"):
     colors = ThemeManager.get_colors(theme)
     risk_df = compute_risk_contribution(raw_df, node_id, comp_df, group_by)
-    if risk_df.empty: return go.Figure().update_layout(title="Not enough assets for risk decomp", template=f"financial_{theme}", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    if risk_df.empty: return create_empty_figure("Not enough assets for risk decomp", theme=theme)
     fig = go.Figure()
     fig.add_trace(go.Bar(x=risk_df["Company"], y=risk_df["PCR"], name="Risk Contribution (PCR)", marker_color=colors["danger"]))
     fig.add_trace(go.Bar(x=risk_df["Company"], y=risk_df["Weight"], name="Capital Weight", marker_color=colors["info"]))
-    fig.update_layout(title="Marginal Contribution to Risk", barmode="group", template=f"financial_{theme}", margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    fig = apply_shared_layout(fig, title="Marginal Contribution to Risk", theme=theme, margin=dict(l=0,r=0,t=40,b=20), barmode="group")
     return fig
 
 def create_distribution_fig(raw_df, node_id, comp_df, group_by, theme="dark"):
     colors = ThemeManager.get_colors(theme)
-    if raw_df.empty: return go.Figure().update_layout(title="No data", template=f"financial_{theme}", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+    if raw_df.empty: return create_empty_figure("No data", theme=theme)
     
     if node_id == "NIFTY-50" or not node_id:
         comps = comp_df["Company"].unique()
@@ -508,7 +514,7 @@ def update_dashboard_state(node_id, filter_state, theme):
     res = run_treemap_pipeline(f"{start_year}-01-01", f"{end_year}-12-31", size_metric, group_by)
     
     if res["hierarchy"].empty or res["raw_data"].empty:
-        return [], html.Div(), go.Figure().update_layout(title="No data", xaxis_visible=False, yaxis_visible=False), ""
+        return [], html.Div(), create_empty_figure("No data", theme=theme), ""
         
     comp_df = res["company_growth"]
     sector_df = res["sector_growth"]
@@ -699,13 +705,7 @@ def update_dashboard_state(node_id, filter_state, theme):
             line=dict(color=line_color, width=2.5), fill='tozeroy', fillcolor=fill_color
         ))
 
-    spark_fig.update_layout(
-        margin=dict(l=0,r=0,t=20,b=20), height=300, 
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", 
-        xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor=colors["grid"]),
-        hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        template=f"financial_{theme}"
-    )
+    spark_fig = apply_shared_layout(spark_fig, theme=theme, margin=dict(l=0,r=0,t=20,b=20), height=300, xaxis=dict(showgrid=False), yaxis=dict(showgrid=True, gridcolor=colors["grid"]), hovermode="x unified", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
 
     stats_row = dbc.Row([
         dbc.Col([html.Div("CAGR", className="text-muted small"), html.Div(f"{stat_cagr:+.2%}", className="fw-bold font-mono text-primary")], width=2),
@@ -744,7 +744,7 @@ def update_dashboard_state(node_id, filter_state, theme):
             y = y_vals + [sum(y_vals)],
             connector = {"line":{"color":"rgb(63, 63, 63)"}},
         ))
-        waterfall_fig.update_layout(title=f"{group_by} Contribution to Market Return", showlegend=False, template=f"financial_{theme}", margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+        waterfall_fig = apply_shared_layout(waterfall_fig, title=f"{group_by} Contribution to Market Return", theme=theme, showlegend=False, margin=dict(l=0,r=0,t=40,b=20))
         
     elif "/" not in node_id:
         # Company Contribution to Group
@@ -772,10 +772,10 @@ def update_dashboard_state(node_id, filter_state, theme):
                 y = y_vals + [sum(y_vals)],
                 connector = {"line":{"color":"rgb(63, 63, 63)"}},
             ))
-            waterfall_fig.update_layout(title=f"Asset Contribution to {node_id} Return", showlegend=False, template=f"financial_{theme}", margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+            waterfall_fig = apply_shared_layout(waterfall_fig, title=f"Asset Contribution to {node_id} Return", theme=theme, showlegend=False, margin=dict(l=0,r=0,t=40,b=20))
     else:
         # Company selected
-        waterfall_fig.update_layout(title="Attribution not available at asset level", template=f"financial_{theme}", margin=dict(l=0,r=0,t=40,b=20), paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis_visible=False, yaxis_visible=False)
+        waterfall_fig = create_empty_figure("Attribution not available at asset level", theme=theme)
 
     tabs = dbc.Tabs([
         dbc.Tab(dcc.Graph(figure=spark_fig, config=MODEBAR_CONFIG), label="Trend Analysis", tab_id="tab-trend", tab_style={"cursor": "pointer"}),
@@ -850,12 +850,7 @@ def update_market_breadth(filter_state, theme):
             showarrow=False, font=dict(family="JetBrains Mono", size=10, color=ThemeManager.get_colors(theme)["text_primary"]),
             xanchor="right", yanchor="top"
         )
-    breadth_fig.update_layout(
-        margin=dict(l=0, r=0, t=0, b=0), height=40, showlegend=False,
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        xaxis=dict(visible=False, fixedrange=True), yaxis=dict(visible=False, fixedrange=True),
-        template=f"financial_{theme}"
-    )
+    breadth_fig = apply_shared_layout(breadth_fig, theme=theme, margin=dict(l=0, r=0, t=0, b=0), height=40, showlegend=False, xaxis=dict(visible=False, fixedrange=True), yaxis=dict(visible=False, fixedrange=True))
     return breadth_fig
 
 # ---------------------------

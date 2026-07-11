@@ -11,8 +11,8 @@ import copy
 
 def safe_lru_cache(maxsize=32):
     """
-    LRU cache that safely returns deep copies of pandas DataFrames and dicts 
-    so that downstream callbacks can't accidentally mutate the cached state.
+    LRU cache that safely returns shallow copies of pandas DataFrames and dicts 
+    to prevent accidental mutations while preserving extreme performance.
     """
     def decorator(func):
         cached_func = functools.lru_cache(maxsize=maxsize)(func)
@@ -21,9 +21,11 @@ def safe_lru_cache(maxsize=32):
             result = cached_func(*args, **kwargs)
             if isinstance(result, tuple):
                 return tuple(
-                    item.copy() if hasattr(item, "copy") else copy.deepcopy(item)
+                    item.copy(deep=False) if isinstance(item, pd.DataFrame) else (item.copy() if hasattr(item, "copy") else copy.deepcopy(item))
                     for item in result
                 )
+            if isinstance(result, pd.DataFrame):
+                return result.copy(deep=False)
             if hasattr(result, "copy"):
                 return result.copy()
             return copy.deepcopy(result)

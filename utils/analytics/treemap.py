@@ -2,27 +2,21 @@ import pandas as pd
 import numpy as np
 from utils.database import run_query
 from utils.logger import get_logger
+from utils.logger import get_logger
 from utils.analytics.shared import compute_daily_returns, safe_lru_cache
+from utils.analytics.global_state import get_global_data
 
 logger = get_logger(__name__)
 
 @safe_lru_cache(maxsize=32)
 def load_clean_data(start_date: str, end_date: str) -> pd.DataFrame:
-    """Fetches clean data from DuckDB for the specific date window."""
-    query = """
-        SELECT Company, Sector, Date, Close, Volume, Turnover
-        FROM clean_stock_data
-        WHERE Date >= ? AND Date <= ?
-          AND Close IS NOT NULL AND Volume IS NOT NULL
-        ORDER BY Company, Date
-    """
-    df = run_query(query, params=(start_date, end_date))
-    df["Date"] = pd.to_datetime(df["Date"])
-    df["Volume"] = df["Volume"].fillna(0)
-    if "Turnover" in df.columns:
-        df["Turnover"] = df["Turnover"].fillna(0)
-    df = compute_daily_returns(df)
-    return df
+    """Fetches clean data from the global dataset for the specific date window."""
+    df = get_global_data()
+    if df.empty:
+        return df
+        
+    mask = (df["Date"] >= start_date) & (df["Date"] <= end_date)
+    return df.loc[mask]
 
 def compute_growth_metrics(df: pd.DataFrame, size_metric: str, group_by: str = "Sector") -> tuple:
     if df.empty:

@@ -1,264 +1,328 @@
 import dash
-from dash import State, html, dcc, callback, Input, Output
+from dash import State, html, dcc, callback, Input, Output, no_update
+import dash_ag_grid as dag
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
 import plotly.express as px
+import numpy as np
+import pandas as pd
 
-from utils.analytics.risk_return import prepare_plot_data
+from utils.analytics.risk_return import prepare_plot_data, get_portfolio_performance
 from utils.config import get_cluster_colors, get_quant_colorscale, MODEBAR_CONFIG, ThemeManager
+from utils.visuals import apply_shared_layout
+from components.cards import create_stat_card
 
 dash.register_page(__name__, path="/risk_return", name="Risk vs Return")
 
-from utils.database import run_query
-
-def _get_default_company():
-    try:
-        # Just grab the first alphabetical company
-        query = "SELECT MIN(Company) as Company FROM clean_stock_data"
-        return run_query(query)["Company"].iloc[0]
-    except Exception:
-        return "RELIANCE"
-
-DEFAULT_COMPANY = _get_default_company()
-
-
-def create_scatter_plot(feature_matrix, selected_company=None, theme="dark"):
-    # Identify top performers to label (Top 3 by Sharpe) plus the selected company
-    labels = []
-    top_performers = (feature_matrix.nlargest(3, "Sharpe_Ratio")["Company"].tolist()
-                      if "Sharpe_Ratio" in feature_matrix.columns else [])
+def create_scatter_plot(feature_matrix, cov_matrix, frontier_df, tangency, selected_company=None, portfolio_weights=None, theme="dark"):
+    colors = feature_matrix["Risk_Class"].map({
+        "Defensive": ThemeManager.get_colors(theme)["success"],
+        "Balanced": ThemeManager.get_colors(theme)["info"],
+        "Growth": ThemeManager.get_colors(theme)["warning"],
+        "Aggressive": ThemeManager.get_colors(theme)["danger"],
+    })
     
-    for c in feature_matrix["Company"]:
-        if c == selected_company or c in top_performers:
-            labels.append(c)
-        else:
-            labels.append("")
-
-    colors = feature_matrix["Cluster"].map(get_cluster_colors(theme))
     tm_colors = ThemeManager.get_colors(theme)
     base_rgb = "0,0,0" if theme == "light" else "255,255,255"
-
-    if selected_company is not None:
-        opacity = feature_matrix["Company"].apply(
-            lambda c: 1.0 if c == selected_company else 0.4
-        )
-        sizes = feature_matrix["Company"].apply(
-            lambda c: 16 if c == selected_company else 12
-        )
-        line_widths = feature_matrix["Company"].apply(
-            lambda c: 2.0 if c == selected_company else 1.5
-        )
-        line_colors = tm_colors["bg_surface"]
-    else:
-        opacity = 0.9
-        sizes = 13
-        line_widths = 1.5
-        line_colors = tm_colors["bg_surface"]
-        
-    has_sharpe = "Sharpe_Ratio" in feature_matrix.columns
-
+    
+    # Base scatter for companies
     fig = go.Figure(
         go.Scattergl(
             x=feature_matrix["Annual_Volatility"],
             y=feature_matrix["Annual_Return"],
             mode="markers+text",
-            text=labels,
+            text=[c if c == selected_company else "" for c in feature_matrix["Company"]],
             textposition="top center",
             textfont=dict(size=10, color=tm_colors["text_primary"]),
             marker=dict(
-                size=sizes,
-                color=feature_matrix["Sharpe_Ratio"] if has_sharpe else colors,
-                colorscale=get_quant_colorscale(theme) if has_sharpe else None,
-                cmid=0 if has_sharpe else None,
-                showscale=has_sharpe,
+                size=[16 if c == selected_company else 10 for c in feature_matrix["Company"]],
+                color=feature_matrix["Sharpe_Ratio"],
+                colorscale=get_quant_colorscale(theme),
+                cmid=0,
+                showscale=True,
                 colorbar=dict(
                     title="Sharpe",
                     thickness=12, len=0.6,
                     x=1.02, xanchor="left",
-                ) if has_sharpe else None,
-                opacity=opacity,
-                line=dict(width=line_widths, color=line_colors),
+                ),
+                opacity=[1.0 if c == selected_company else 0.6 for c in feature_matrix["Company"]],
+                line=dict(width=1.5, color=tm_colors["bg_surface"]),
             ),
-            customdata=feature_matrix[["Company", "Sector", "Cluster"]],
+            customdata=feature_matrix[["Company", "Sector", "Risk_Class"]],
             hovertemplate=(
                 "<b>%{customdata[0]}</b><br>"
                 "Sector: %{customdata[1]}<br>"
+                "Risk Class: %{customdata[2]}<br>"
                 "Return: %{y:.2%}<br>"
-                "Volatility: %{x:.2%}<br>"
-                "Cluster: %{customdata[2]}<extra></extra>"
+                "Volatility: %{x:.2%}<extra></extra>"
             ),
+            name="Assets"
         )
     )
 
-    # Empirical Efficient Frontier (Upper Envelope)
-    if len(feature_matrix) > 5:
-        sorted_fm = feature_matrix.sort_values("Annual_Volatility")
-        envelope_x = []
-        envelope_y = []
-        max_y = -float('inf')
-        for _, row in sorted_fm.iterrows():
-            if row["Annual_Return"] > max_y:
-                max_y = row["Annual_Return"]
-                envelope_x.append(row["Annual_Volatility"])
-                envelope_y.append(row["Annual_Return"])
-                
+    # Efficient Frontier
+    if not frontier_df.empty:
         fig.add_trace(go.Scatter(
-            x=envelope_x, y=envelope_y, 
-            mode="lines", 
-            line=dict(color=tm_colors["info"], width=2.5, dash="dash"),
-            name="Empirical Frontier",
-            hoverinfo="skip"
+            x=frontier_df["Annual_Volatility"],
+            y=frontier_df["Annual_Return"],
+            mode="lines",
+            line=dict(color=tm_colors["text_primary"], width=2),
+            name="Efficient Frontier"
         ))
-
-    # Manual legend since single-trace scatter has no auto cluster legend
-    for cluster_id, color in get_cluster_colors(theme).items():
-        fig.add_trace(go.Scattergl(
-            x=[None], y=[None], mode="markers",
-            marker=dict(size=10, color=color),
-            name=f"Cluster {cluster_id}",
-            showlegend=True,
+        
+    # Capital Market Line & Tangency
+    if tangency:
+        risk_free = 0.05
+        # Line from (0, rf) to Tangency Portfolio
+        cml_x = [0, tangency["Annual_Volatility"], tangency["Annual_Volatility"] * 1.5]
+        slope = (tangency["Annual_Return"] - risk_free) / tangency["Annual_Volatility"]
+        cml_y = [risk_free, tangency["Annual_Return"], risk_free + slope * (tangency["Annual_Volatility"] * 1.5)]
+        
+        fig.add_trace(go.Scatter(
+            x=cml_x, y=cml_y,
+            mode="lines",
+            line=dict(color=tm_colors["success"], width=2, dash="dash"),
+            name="Capital Market Line"
         ))
+        
+        fig.add_trace(go.Scatter(
+            x=[tangency["Annual_Volatility"]],
+            y=[tangency["Annual_Return"]],
+            mode="markers",
+            marker=dict(size=14, color=tm_colors["success"], symbol="star", line=dict(width=1, color="white")),
+            name="Tangency Portfolio",
+            hovertemplate="<b>Tangency Portfolio</b><br>Return: %{y:.2%}<br>Volatility: %{x:.2%}<br>Sharpe: " + f"{tangency['Sharpe_Ratio']:.2f}<extra></extra>"
+        ))
+        
+    # Custom Portfolio Marker
+    if portfolio_weights is not None and not feature_matrix.empty:
+        # We need to map the dict of {company: weight} to an array aligned with cov_matrix
+        companies = cov_matrix.columns
+        w_array = np.zeros(len(companies))
+        for i, c in enumerate(companies):
+            w_array[i] = portfolio_weights.get(c, 0)
+            
+        if np.sum(w_array) > 0:
+            # normalize just in case
+            w_array = w_array / np.sum(w_array)
+            returns_aligned = feature_matrix.set_index("Company").loc[companies]["Annual_Return"].values
+            p_ret, p_vol, p_sharpe = get_portfolio_performance(w_array, returns_aligned, cov_matrix, 0.05)
+            
+            fig.add_trace(go.Scatter(
+                x=[p_vol],
+                y=[p_ret],
+                mode="markers",
+                marker=dict(size=14, color=tm_colors["warning"], symbol="diamond", line=dict(width=1, color="white")),
+                name="Custom Portfolio",
+                hovertemplate="<b>Custom Portfolio</b><br>Return: %{y:.2%}<br>Volatility: %{x:.2%}<br>Sharpe: " + f"{p_sharpe:.2f}<extra></extra>"
+            ))
 
-    fig.update_layout(
+    fig = apply_shared_layout(
+        fig,
+        theme=theme,
         legend=dict(
-            title_text="Cluster",
             orientation="h",
-            yanchor="top", y=-0.12,
+            yanchor="top", y=-0.15,
             xanchor="left", x=0,
             font=dict(size=11),
         ),
-        xaxis_title="Annual Volatility",
+        xaxis_title="Annual Volatility (Risk)",
         yaxis_title="Annual Return",
         margin=dict(l=50, r=80, t=30, b=80),
-        clickmode="event",
-        template=f"financial_{theme}"
+        clickmode="event"
     )
+    
+    # Force X axis to start from 0 to show CML intersection
+    fig.update_xaxes(rangemode="tozero")
     return fig
-
-
-def create_price_chart(company_df, company, view_option, theme="dark"):
-    if view_option == "price":
-        fig = px.line(company_df, x="Date", y="Close")
-        fig.update_traces(line=dict(color=ThemeManager.get_colors(theme)["info"], width=2))
-    else:
-        company_df = company_df.copy()
-        company_df["Cumulative_Return"] = (
-            (1 + company_df["Daily_Return"].fillna(0)).cumprod() - 1
-        )
-        fig = px.line(company_df, x="Date", y="Cumulative_Return")
-        fig.update_traces(line=dict(color=ThemeManager.get_colors(theme)["success"], width=2))
-        fig.update_layout(yaxis_tickformat=".0%")
-
-    fig.update_layout(title=None, template=f"financial_{theme}") # We rely on CardHeader for the title
-    return fig
-
 
 layout = dbc.Container([
-    html.H2("Risk Return Analysis", className="mt-3 mb-1 text-primary fw-bold"),
-    html.Div(id="risk-smart-narrative"),
-    html.P("Analyze the volatility vs. return of companies. The dashed line represents the Empirical Efficient Frontier.",
+    html.H2("Risk Return Analytics", className="mt-3 mb-1 text-primary fw-bold"),
+    html.P("Modern Portfolio Theory workspace. Construct portfolios, analyze the Efficient Frontier, and evaluate risk-adjusted returns.",
            className="text-muted mb-4"),
-
-    dcc.Store(id="selected-company-store", data=DEFAULT_COMPANY),
+           
+    html.Div(id="risk-smart-narrative", className="mb-4"),
 
     dbc.Row([
+        # Main Scatter Plot
         dbc.Col(
             dbc.Card([
-                dbc.CardHeader("Cluster Scatter Plot", className="fw-bold text-primary"),
+                dbc.CardHeader("Efficient Frontier & Asset Distribution", className="fw-bold text-primary"),
                 dbc.CardBody(
                     dcc.Loading(
                         dcc.Graph(
                             id="risk-return-scatter",
                             config=MODEBAR_CONFIG,
+                            style={"height": "500px"}
                         ),
                         type="circle", color="var(--accent-primary)"
                     )
                 ),
             ], className="shadow-sm border-0 bg-surface h-100"),
-            width=6,
+            lg=8, md=12, className="mb-4"
         ),
+        
+        # Portfolio Builder
         dbc.Col(
             dbc.Card([
-                dbc.CardHeader(id="price-chart-title", className="fw-bold text-primary"),
+                dbc.CardHeader("Portfolio Builder", className="fw-bold text-primary"),
                 dbc.CardBody([
-                    dbc.RadioItems(
-                        id="price-view-toggle",
-                        options=[
-                            {"label": "Closing Price", "value": "price"},
-                            {"label": "Cumulative Return", "value": "cumulative"},
-                        ],
-                        value="price",
-                        inline=True,
-                        className="mb-3",
+                    html.P("Select assets to build a custom equally-weighted portfolio and compare it against the Efficient Frontier.", className="small text-muted mb-3"),
+                    dcc.Dropdown(
+                        id="portfolio-asset-selector",
+                        multi=True,
+                        placeholder="Search & Select Assets...",
+                        className="mb-4"
                     ),
-                    dcc.Loading(
-                        dcc.Graph(id="risk-return-price-chart", config=MODEBAR_CONFIG),
-                        type="circle", color="var(--accent-primary)"
-                    )
+                    html.Div(id="portfolio-analytics-panel")
                 ]),
             ], className="shadow-sm border-0 bg-surface h-100"),
-            width=6,
+            lg=4, md=12, className="mb-4"
         ),
     ], className="g-3"),
+    
+    # Ranking Table
+    dbc.Row([
+        dbc.Col([
+            html.H6("ASSET RANKING", className="text-muted text-uppercase fw-bold mb-3 mt-2", style={"letterSpacing": "1px", "fontSize": "11px"}),
+            html.Div(id="risk-ranking-table-container")
+        ], width=12)
+    ])
 ], fluid=True, className="px-4 py-3")
 
 
 @callback(
-    Output("selected-company-store", "data"),
-    Input("risk-return-scatter", "clickData"),
+    Output("portfolio-asset-selector", "options"),
+    Input("theme-store", "data")
 )
-def update_selected_company(click_data):
-    if click_data is None:
-        return dash.no_update
-    
-    # We can rely on customdata[0] which contains the company name
-    return click_data["points"][0]["customdata"][0]
+def populate_dropdown(theme):
+    _, feature_matrix, _, _, _ = prepare_plot_data()
+    if feature_matrix.empty:
+        return []
+    return [{"label": c, "value": c} for c in sorted(feature_matrix["Company"].tolist())]
 
 
 @callback(
     Output("risk-return-scatter", "figure"),
+    Output("portfolio-analytics-panel", "children"),
     Output("risk-smart-narrative", "children"),
-    Input("selected-company-store", "data", allow_optional=True),
-    Input("global-state", "data"),
-    Input("theme-store", "data"),
-    State("url", "pathname")
+    Input("portfolio-asset-selector", "value"),
+    Input("theme-store", "data")
 )
-def update_scatter_highlight(company, global_state, theme, pathname):
-    import dash
-    if pathname != "/risk-return" and pathname != "/risk_return":
-        raise dash.exceptions.PreventUpdate
-        
-    from components.narrative import generate_smart_narrative
-    df, feature_matrix = prepare_plot_data()
+def update_workspace(portfolio_assets, theme):
+    df, feature_matrix, cov_matrix, frontier_df, tangency = prepare_plot_data()
     
-    if global_state and global_state.get("sectors"):
-        feature_matrix = feature_matrix[feature_matrix["Sector"].isin(global_state["sectors"])]
-        
     if feature_matrix.empty:
-        import plotly.graph_objects as go
-        empty_fig = go.Figure().update_layout(title="No data available", xaxis_visible=False, yaxis_visible=False, template=f"financial_{theme}")
-        return empty_fig, html.Div("No data available for the selected filters.", className="text-muted")
+        from utils.visuals import create_empty_figure
+        return create_empty_figure("No data available", theme=theme), html.Div("No Data"), html.Div("No Data")
         
-    fig = create_scatter_plot(feature_matrix, company, theme)
-    narrative = generate_smart_narrative(feature_matrix, context="risk")
-    return fig, narrative
+    selected_company = None
+
+            
+    # Calculate Custom Portfolio
+    portfolio_weights = None
+    analytics_panel = html.Div([
+        html.Div("No assets selected.", className="text-muted text-center p-4")
+    ])
+    
+    if portfolio_assets and len(portfolio_assets) > 0:
+        weight = 1.0 / len(portfolio_assets)
+        portfolio_weights = {c: weight for c in portfolio_assets}
+        
+        companies = cov_matrix.columns
+        w_array = np.zeros(len(companies))
+        for i, c in enumerate(companies):
+            w_array[i] = portfolio_weights.get(c, 0)
+            
+        returns_aligned = feature_matrix.set_index("Company").loc[companies]["Annual_Return"].values
+        p_ret, p_vol, p_sharpe = get_portfolio_performance(w_array, returns_aligned, cov_matrix, 0.05)
+        
+        analytics_panel = html.Div([
+            html.H6("PORTFOLIO METRICS", className="text-muted text-uppercase fw-bold mb-3", style={"letterSpacing": "1px", "fontSize": "11px"}),
+            dbc.Row([
+                dbc.Col(create_stat_card("Expected Return", f"{p_ret:.2%}", "bi-graph-up-arrow", "success"), width=6, className="mb-3"),
+                dbc.Col(create_stat_card("Volatility (Risk)", f"{p_vol:.2%}", "bi-activity", "warning"), width=6, className="mb-3"),
+                dbc.Col(create_stat_card("Sharpe Ratio", f"{p_sharpe:.2f}", "bi-lightning-charge", "info"), width=6, className="mb-3"),
+                dbc.Col(create_stat_card("Holdings", f"{len(portfolio_assets)}", "bi-collection", "primary"), width=6, className="mb-3"),
+            ]),
+            dbc.Button([html.I(className="bi bi-download me-2"), "Export Weights"], id="btn-export-portfolio", color="secondary", outline=True, size="sm", className="w-100 fw-bold shadow-sm")
+        ])
+        
+    fig = create_scatter_plot(feature_matrix, cov_matrix, frontier_df, tangency, selected_company, portfolio_weights, theme)
+    
+    # Generate Smart Narrative based on Tangency Portfolio
+    narrative_text = "Analysis complete."
+    if tangency:
+        best_ret = tangency["Annual_Return"]
+        best_vol = tangency["Annual_Volatility"]
+        best_sharpe = tangency["Sharpe_Ratio"]
+        narrative_text = f"The Tangency Portfolio achieves an optimal Expected Return of {best_ret:.2%} with {best_vol:.2%} Volatility (Sharpe: {best_sharpe:.2f}). Adjust your holdings to approximate this risk-adjusted profile."
+        
+    narrative_div = dbc.Alert([
+        html.I(className="bi bi-lightbulb-fill text-warning me-2"),
+        html.Span(narrative_text, className="small fw-bold text-muted")
+    ], color="secondary", className="border-0 shadow-sm py-2 px-3 bg-surface bg-opacity-50")
+    
+    return fig, analytics_panel, narrative_div
 
 
 @callback(
-    Output("risk-return-price-chart", "figure"),
-    Output("price-chart-title", "children"),
-    Input("selected-company-store", "data"),
-    Input("price-view-toggle", "value"),
+    Output("event-bus", "data", allow_duplicate=True),
+    Input("risk-return-scatter", "clickData"),
+    prevent_initial_call=True
+)
+def handle_scatter_click(click_data):
+    if not click_data:
+        return no_update
+    try:
+        company = click_data["points"][0]["customdata"][0]
+        return {"type": "OPEN_COMPANY_DRAWER", "payload": f"Company:{company}"}
+    except Exception:
+        return no_update
+
+
+@callback(
+    Output("risk-ranking-table-container", "children"),
     Input("theme-store", "data")
 )
-def update_price_chart(company, view_option, theme):
-    df, _ = prepare_plot_data()
-    company_df = df[df["Company"] == company]
-    
-    if company_df.empty:
-        import plotly.graph_objects as go
-        empty_fig = go.Figure().update_layout(title="No data available", xaxis_visible=False, yaxis_visible=False, template=f"financial_{theme}")
-        return empty_fig, f"Historical Price — {company}"
+def render_ranking_table(theme):
+    _, feature_matrix, _, _, _ = prepare_plot_data()
+    if feature_matrix.empty:
+        return ""
         
-    fig = create_price_chart(company_df, company, view_option, theme)
-    return fig, f"Historical Price — {company}"
+    df_display = feature_matrix[["Company", "Sector", "Risk_Class", "Annual_Return", "Annual_Volatility", "Sharpe_Ratio"]].copy()
+    df_display = df_display.sort_values("Sharpe_Ratio", ascending=False).round(4)
+    
+    # Format percentages
+    df_display["Annual_Return"] = df_display["Annual_Return"].apply(lambda x: f"{x:.2%}")
+    df_display["Annual_Volatility"] = df_display["Annual_Volatility"].apply(lambda x: f"{x:.2%}")
+    df_display["Sharpe_Ratio"] = df_display["Sharpe_Ratio"].apply(lambda x: f"{x:.2f}")
+    
+    tm_colors = ThemeManager.get_colors(theme)
+    
+    table = dag.AgGrid(
+        id="risk-ranking-table",
+        className="ag-theme-alpine-dark" if theme == "dark" else "ag-theme-alpine",
+        columnDefs=[{"field": i, "headerName": i, "sortable": True} for i in df_display.columns],
+        rowData=df_display.to_dict("records"),
+        dashGridOptions={"pagination": True, "paginationPageSize": 10, "domLayout": "autoHeight"},
+    )
+    
+    return dbc.Card([
+        dbc.CardBody(table, className="p-0")
+    ], className="shadow-sm border-0 bg-surface overflow-hidden")
+
+@callback(
+    Output("event-bus", "data", allow_duplicate=True),
+    Input("risk-ranking-table", "cellClicked"),
+    State("risk-ranking-table", "rowData"),
+    prevent_initial_call=True
+)
+def handle_table_click(cell_clicked, row_data):
+    if cell_clicked and row_data:
+        row_idx = cell_clicked.get("rowIndex")
+        if row_idx is not None and row_idx < len(row_data):
+            company = row_data[row_idx].get("Company")
+            if company:
+                return {"type": "OPEN_COMPANY_DRAWER", "payload": f"Company:{company}"}
+    return no_update

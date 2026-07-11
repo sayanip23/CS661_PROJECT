@@ -35,31 +35,16 @@ app = dash.Dash(
 # Master Layout with Top Bar & Mini-Sidebar
 # ==========================================
 
-# 1. The New Top Bar Component
-top_bar = html.Div([
-    # Hamburger Toggle
-    html.Button(
-        html.I(className="bi bi-list fs-4"), 
-        id="sidebar-toggle", 
-        className="toggle-btn me-3",
-        **{"aria-label": "Toggle Sidebar", "aria-expanded": "true"}
-    ),
-    # Branding
-    html.I(className="bi bi-pie-chart-fill text-primary fs-4 me-2"),
-    html.H4("CS661 IIT KANPUR", className="top-bar-title mb-0"),
-    html.H6("| Quantitative Analytics", className="top-bar-subtitle mb-0 ms-2 text-muted"),
-    
-    # Global Filter Summary Area
-    html.Div(id="global-filter-summary", className="ms-auto d-flex align-items-center"),
-    
-    # Theme Toggle
-    html.Button(
-        html.I(className="bi bi-moon-fill fs-5", id="theme-toggle-icon"), 
-        id="theme-toggle-btn", 
-        className="btn btn-sm btn-link text-muted ms-3 border-0 text-decoration-none shadow-none",
-        **{"aria-label": "Toggle Theme"}
-    )
-], className="top-bar")
+from components.shared.header import create_global_header
+from components.shared.global_drawers import create_global_drawers
+from components.shared.navigation import create_global_breadcrumbs
+from components.shared.notifications import create_global_notifications
+from components.shared.command_palette import create_command_palette
+from components.shared.export_center import create_export_center
+
+# ==========================================
+# Master Layout with Top Bar & Mini-Sidebar
+# ==========================================
 
 
 app.layout = html.Div([
@@ -67,25 +52,43 @@ app.layout = html.Div([
     dcc.Store(id="sidebar-state", data=True, storage_type="local"),
     # Global state initialized empty
     dcc.Store(id="global-state", data={"sectors": [], "companies": []}, storage_type="local"),
+    # Event Bus for cross-page communication
+    dcc.Store(id="event-bus", data={"type": None, "payload": None}, storage_type="memory"),
     # Theme state initialized to dark
     dcc.Store(id="theme-store", data="dark", storage_type="local"),
     
-    # Inject Top Bar
-    top_bar,
+    # Global Intelligence State
+
+    dcc.Store(id="comparison-state", data=[], storage_type="local"),
+    
+    # Notification State
+    dcc.Store(id="notification-bus", data=None, storage_type="memory"),
+    
+    # Inject Global Components
+    create_global_header(),
+    create_global_drawers(),
+    create_global_notifications(),
+    create_command_palette(),
+    create_export_center(),
     
     # Inject Sidebar (Now positioned below Top Bar via CSS)
     html.Div(create_sidebar(), id="sidebar", className="sidebar", role="navigation"),
     
     # Inject Main Content wrapped in a global Error Boundary
-    html.Main(
+    html.Main([
+        # Breadcrumbs Navigation
+        create_global_breadcrumbs(),
+        
+        # Page Content
         dcc.Loading(
             dash.page_container,
             type="circle",
             color="var(--accent-primary)"
-        ), 
-        id="page-content", 
-        className="content", 
-        role="main"
+        )
+    ],
+    id="page-content", 
+    className="content", 
+    role="main"
     )
 ])
 
@@ -108,50 +111,8 @@ def toggle_sidebar(n_clicks, is_open):
         return "sidebar", "content", True
 
 
-# ==========================================
-# Global Filter State Rendering
-# ==========================================
-@app.callback(
-    Output("global-filter-summary", "children"),
-    Input("global-state", "data")
-)
-def render_global_filter(data):
-    if not data:
-        return ""
-    
-    sectors = data.get("sectors", [])
-    companies = data.get("companies", [])
-    
-    badges = []
-    for s in sectors:
-        badges.append(html.Span([s, html.I(className="bi bi-x ms-1")], className="badge bg-primary me-2 px-2 py-1", style={"cursor": "pointer"}))
-    for c in companies:
-        badges.append(html.Span([c, html.I(className="bi bi-x ms-1")], className="badge bg-secondary me-2 px-2 py-1", style={"cursor": "pointer"}))
-        
-    if badges:
-        badges.append(
-            html.Button(
-                "Clear All", 
-                id="clear-global-filter", 
-                className="btn btn-sm btn-outline-danger ms-2 px-2 py-1",
-                **{"aria-label": "Clear all global filters"}
-            )
-        )
-        return html.Div([
-            html.Span("Active Filters:", className="text-muted small me-2"),
-            *badges
-        ], className="d-flex align-items-center")
-    
-    return html.Div(className="text-muted small", children="No active filters")
 
 
-@app.callback(
-    Output("global-state", "data"),
-    Input("clear-global-filter", "n_clicks"),
-    prevent_initial_call=True
-)
-def clear_global_filters(n_clicks):
-    return {"sectors": [], "companies": []}
 
 
 # ==========================================
@@ -170,6 +131,15 @@ dash.clientside_callback(
         // Apply theme to body
         document.documentElement.setAttribute('data-theme', new_theme);
         document.body.setAttribute('data-theme', new_theme);
+        
+        // Apply theme to Bootstrap 5
+        document.documentElement.setAttribute('data-bs-theme', new_theme);
+        
+        // Update AG Grid themes
+        document.querySelectorAll('.ag-theme-alpine, .ag-theme-alpine-dark').forEach(el => {
+            el.classList.remove('ag-theme-alpine', 'ag-theme-alpine-dark');
+            el.classList.add(new_theme === 'dark' ? 'ag-theme-alpine-dark' : 'ag-theme-alpine');
+        });
         
         // Update icon class
         const icon_class = new_theme === 'dark' ? 'bi bi-moon-fill fs-5' : 'bi bi-sun-fill fs-5 text-warning';

@@ -253,21 +253,41 @@ h1, h2, h3, h4, h5, h6 {
     font-weight: 500 !important;
 }
 
-/* Dropdown */
-.Select-control, .Select-menu-outer { 
+/* React-Select (dcc.Dropdown) */
+.Select-control, 
+.Select-menu-outer, 
+.Select-menu,
+.Select-value { 
     background-color: var(--bg-base) !important; 
-    border: 1px solid var(--border-strong) !important; 
-    border-radius: var(--radius-sm) !important;
+    border-color: var(--border-strong) !important; 
 }
-.Select-value-label, .Select-input > input { 
-    color: var(--text-primary) !important; font-family: var(--font-sans);
+.Select-value-label, 
+.has-value.Select--single > .Select-control .Select-value .Select-value-label, 
+.has-value.is-pseudo-focused.Select--single > .Select-control .Select-value .Select-value-label,
+.Select-input > input { 
+    color: var(--text-primary) !important; font-family: var(--font-sans) !important;
 }
 .Select-placeholder { color: var(--text-tertiary) !important; }
 .Select-option { background-color: var(--bg-base) !important; color: var(--text-secondary) !important; }
-.Select-option:hover, .Select-option.is-focused { 
+.Select-option:hover, .Select-option.is-focused, .Select-option.is-selected { 
     background-color: var(--bg-elevated) !important; color: var(--text-primary) !important; 
 }
+/* Fix the caret color */
+.Select-arrow-zone .Select-arrow { border-color: var(--text-secondary) transparent transparent !important; }
+.is-open .Select-arrow-zone .Select-arrow { border-color: transparent transparent var(--text-secondary) !important; }
 .is-searchable.is-open > .Select-control .Select-value { opacity: 0.3 !important; }
+
+/* Bootstrap Select (dbc.Select) and Inputs */
+.form-select, .form-control {
+    background-color: var(--bg-base) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border-strong) !important;
+}
+.form-select:focus, .form-control:focus {
+    background-color: var(--bg-base) !important;
+    color: var(--text-primary) !important;
+    border-color: var(--accent-primary) !important;
+}
 
 /* Radio & Checkbox Labels */
 .form-check-label {
@@ -305,4 +325,51 @@ h1, h2, h3, h4, h5, h6 {
     .sidebar { transform: translateX(-100%); width: 260px; }
     .sidebar.mobile-open { transform: translateX(0); box-shadow: var(--shadow-lg); }
     .top-bar-subtitle { display: none; }
+}
+
+/* =========================================================
+   GROUP 7: ENTERPRISE POLISH & MICRO-INTERACTIONS
+   ========================================================= */
+
+/* Premium Card Hover Physics */
+.card, .custom-card, .border-hover {
+    transition: box-shadow var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast) !important;
+}
+
+.card:hover, .custom-card:hover, .border-hover:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md) !important;
+}
+
+/* Focus Rings for Accessibility */
+*:focus-visible {
+    outline: 2px solid var(--accent-primary) !important;
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+}
+
+/* Command Palette Customization */
+.cmd-palette-backdrop {
+    background-color: rgba(0, 0, 0, 0.7) !important;
+    backdrop-filter: blur(4px);
+}
+.cmd-palette-dropdown .Select-control {
+    border: none !important;
+    box-shadow: none !important;
+    font-size: 1.1rem;
+    padding: 8px 0;
+}
+
+/* Presentation Mode */
+body.presentation-mode .top-bar,
+body.presentation-mode .sidebar,
+body.presentation-mode #global-breadcrumbs-container {
+    display: none !important;
+}
+
+body.presentation-mode .content {
+    margin-left: 0 !important;
+    margin-top: 0 !important;
+    padding: var(--spacing-sm) !important;
+    min-height: 100vh;
 }
