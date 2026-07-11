@@ -22,82 +22,14 @@ MIN_OVERLAP_PERIODS = 60
 # ---------------------------------------------------------------------------
 # Core Data Pipeline
 # ---------------------------------------------------------------------------
-<<<<<<< HEAD
 def load_clean_data() -> pd.DataFrame:
     """Loads the cleaned stock dataset from the global in-memory dataset."""
     return get_global_data()
-=======
-def load_clean_data(start_date=None, end_date=None, sector=None) -> pd.DataFrame:
-    """
-    Loads the cleaned stock dataset from DuckDB, optionally restricted to a
-    date range and/or a single sector.
->>>>>>> 6b1a46747fde769582d0d639f05459894af4b474
 
 def get_company_sector_map(df: pd.DataFrame = None) -> dict:
     """Extracts a mapping of Company to Sector."""
     return get_global_company_sector_map()
 
-<<<<<<< HEAD
-=======
-    conditions = []
-    params = []
-    if start_date is not None:
-        conditions.append("Date >= CAST(? AS DATE)")
-        params.append(start_date)
-    if end_date is not None:
-        conditions.append("Date <= CAST(? AS DATE)")
-        params.append(end_date)
-    if sector is not None:
-        conditions.append("Sector = ?")
-        params.append(sector)
-
-    where_clause = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-
-    query = f"""
-        SELECT
-            Company,
-            Date,
-            Close
-        FROM clean_stock_data
-        {where_clause}
-        ORDER BY Company, Date
-    """
-
-    df = run_query(query, tuple(params) if params else None)
-
-    df["Date"] = pd.to_datetime(df["Date"])
-
-    return df
-
-# ---------------------------------------------------------------------------
-# Step 2: Daily Returns
-# ---------------------------------------------------------------------------
-def compute_daily_returns(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Computes daily percentage returns per company:
-
-        Return_t = (Close_t - Close_(t-1)) / Close_(t-1) * 100
-
-    Returns
-    -------
-    pd.DataFrame
-        Original dataframe with an added 'Daily_Return' column.
-        The first trading day of each company will have NaN (no prior close),
-        which is expected and handled downstream.
-    """
-    df = df.copy()
-
-    df["Daily_Return"] = (
-        df.groupby("Company")["Close"].pct_change() * 100
-    )
-
-    return df
-
-
-# ---------------------------------------------------------------------------
-# Step 3: Pivot Table
-# ---------------------------------------------------------------------------
->>>>>>> 6b1a46747fde769582d0d639f05459894af4b474
 def create_pivot_table(df: pd.DataFrame) -> pd.DataFrame:
     """Pivots the long-format dataframe into Date x Company matrix of returns."""
     return df.pivot_table(index="Date", columns="Company", values="Daily_Return")
@@ -142,7 +74,6 @@ def get_clustered_matrix(corr_matrix: pd.DataFrame, cluster_result: dict) -> pd.
 # ---------------------------------------------------------------------------
 # Group 6 Enhancements: Intelligence & Networks
 # ---------------------------------------------------------------------------
-<<<<<<< HEAD
 def detect_correlation_regime(corr_matrix: pd.DataFrame) -> dict:
     """Identifies the current market correlation regime."""
     if corr_matrix.empty:
@@ -276,52 +207,6 @@ def calculate_time_varying_correlation(df: pd.DataFrame, comp1: str, comp2: str,
     res = rolling_corr.dropna().reset_index()
     res.columns = ['Date', 'Rolling_Correlation']
     return res
-=======
-def run_correlation_pipeline(
-    n_clusters: int = 5,
-    linkage_method: str = "average",
-    start_date=None,
-    end_date=None,
-    sector=None,
-):
-    """
-    Runs steps 1-6 end to end. Used by pages/correlation.py.
-
-    Returns
-    -------
-    dict with keys:
-        'raw_df'           : cleaned input dataframe (with Daily_Return added)
-        'pivot'             : Date x Company daily-return pivot table
-        'corr_matrix'       : Company x Company correlation matrix (original order)
-        'cluster_result'    : output of perform_agglomerative_clustering()
-        'clustered_matrix'  : correlation matrix reordered by dendrogram leaves
-    """
-    df = load_clean_data(start_date=start_date, end_date=end_date, sector=sector)
-    df = compute_daily_returns(df)
-    pivot = create_pivot_table(df)
-    corr_matrix = compute_correlation_matrix(pivot)
-
-    if len(corr_matrix.columns) < 2:
-        raise ValueError(
-            "Fewer than 2 companies in the selected Date/Sector filter -- "
-            "correlation and clustering need at least 2 companies to compare."
-        )
-
-    # A sector filter can leave fewer companies than the requested cluster count.
-    n_clusters = max(1, min(n_clusters, len(corr_matrix.columns) - 1))
-    cluster_result = perform_agglomerative_clustering(
-        corr_matrix, n_clusters=n_clusters, linkage_method=linkage_method
-    )
-    clustered_matrix = get_clustered_matrix(corr_matrix, cluster_result)
-
-    return {
-        "raw_df": df,
-        "pivot": pivot,
-        "corr_matrix": corr_matrix,
-        "cluster_result": cluster_result,
-        "clustered_matrix": clustered_matrix,
-    }
->>>>>>> 6b1a46747fde769582d0d639f05459894af4b474
 
 
 # ---------------------------------------------------------------------------

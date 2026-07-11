@@ -155,8 +155,6 @@ dash.clientside_callback(
 
 
 if __name__ == "__main__":
-<<<<<<< HEAD
+
     app.run(debug=True, port=8050)        # New Dash 2.0+ syntax
-=======
-    app.run(debug=True, port=8050)        # New Dash 2.0+ syntax
->>>>>>> 6b1a46747fde769582d0d639f05459894af4b474
+

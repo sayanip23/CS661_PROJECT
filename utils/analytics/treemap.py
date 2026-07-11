@@ -215,7 +215,6 @@ def run_treemap_pipeline(start_date: str, end_date: str, size_metric: str = "Tot
             "raw_data": pd.DataFrame()
         }
 
-<<<<<<< HEAD
 def get_node_trend_data(df: pd.DataFrame, node_id: str, company_growth: pd.DataFrame = None, group_by: str = "Sector") -> tuple:
     """Computes trend data on-the-fly for the active node and market."""
     if df.empty:
@@ -238,21 +237,6 @@ def get_node_trend_data(df: pd.DataFrame, node_id: str, company_growth: pd.DataF
             node_trend = df[df["Sector"] == node_id].groupby("Date")["Close"].mean().reset_index()
         
     return market_trend, node_trend
-=======
-# ---------------------------------------------------------------------------
-# Convenience: run the full pipeline in one call
-# ---------------------------------------------------------------------------
-def run_treemap_pipeline(
-    start_date=None,
-    end_date=None,
-    size_metric: str = "Total_Volume",
-    min_trading_days: int = MIN_TRADING_DAYS,
-    sector=None,
-    company=None,
-):
-    """
-    Runs steps 1-5 end to end. Used by pages/treemap.py.
->>>>>>> 6b1a46747fde769582d0d639f05459894af4b474
 
 def compute_rolling_performance(df: pd.DataFrame, node_id: str, company_growth: pd.DataFrame = None, group_by: str = "Sector", window: int = 60) -> pd.DataFrame:
     """Computes 60-day rolling return for the active node vs Market."""
@@ -284,7 +268,6 @@ def compute_rolling_performance(df: pd.DataFrame, node_id: str, company_growth: 
     merged = pd.merge(market_daily[["Date", "Market_Rolling_Return"]], node_daily[["Date", "Node_Rolling_Return"]], on="Date", how="inner")
     return merged.dropna()
 
-<<<<<<< HEAD
 def compute_risk_contribution(df: pd.DataFrame, node_id: str, company_growth: pd.DataFrame = None, group_by: str = "Sector") -> pd.DataFrame:
     """Computes Marginal Contribution to Risk (MCR) for the assets in the node."""
     if df.empty:
@@ -325,16 +308,6 @@ def compute_risk_contribution(df: pd.DataFrame, node_id: str, company_growth: pd
     }).sort_values("PCR", ascending=False)
     
     return risk_df
-=======
-    windowed = filter_by_date_range(df, start_date, end_date)
-    if sector is not None:
-        windowed = windowed[windowed["Sector"] == sector]
-    if company is not None:
-        windowed = windowed[windowed["Company"] == company]
-    company_growth = compute_company_growth(windowed, min_trading_days=min_trading_days)
-    sector_growth = aggregate_sector_growth(company_growth)
-    hierarchy = build_hierarchy_dataframe(company_growth, sector_growth, size_metric=size_metric)
->>>>>>> 6b1a46747fde769582d0d639f05459894af4b474
 
 def compute_market_breadth(df: pd.DataFrame, window: int = 60) -> pd.DataFrame:
     """Computes % of stocks with positive rolling return."""

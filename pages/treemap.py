@@ -498,7 +498,6 @@ def create_distribution_fig(raw_df, node_id, comp_df, group_by, theme="dark"):
     Input("filter-state", "data"),
     Input("theme-store", "data")
 )
-<<<<<<< HEAD
 def update_dashboard_state(node_id, filter_state, theme):
     colors = ThemeManager.get_colors(theme)
     color_metric = filter_state["color_metric"]
@@ -546,122 +545,6 @@ def update_dashboard_state(node_id, filter_state, theme):
             low_growth = comp_df.loc[comp_df['CAGR'].idxmin()]
             best_perf = f"{top_growth['Company']} ({top_growth['CAGR']:+.1%})"
             worst_perf = f"{low_growth['Company']} ({low_growth['CAGR']:+.1%})"
-=======
-
-toolbar = dbc.Row(
-    [
-        dbc.Col(
-            [
-                html.Span("Sector Growth Attribution", className="growth-toolbar-title"),
-                html.Span("NIFTY-50 · CAGR & Volume", className="growth-toolbar-subtitle"),
-            ],
-            width="auto",
-        ),
-        dbc.Col(controls_popover, width="auto"),
-        dbc.Col(
-            dbc.Button(html.I(className="bi bi-arrows-fullscreen"), id="growth-fullscreen-btn",
-                       color="light", size="sm", className="growth-toolbar-btn border"),
-            width="auto",
-        ),
-        dbc.Col(html.Div(id="year-range-label", className="growth-period-label"), className="text-end"),
-    ],
-    align="center", justify="between", className="growth-toolbar g-2",
-)
-
-layout = dbc.Container(
-    [
-        dcc.Store(id="growth-data-store", data=serialize_company_growth(PIPELINE["company_growth"])),
-
-        html.Div(
-            [
-                toolbar,
-                html.Div(id="kpi-strip-container", children=build_kpi_strip(
-                    PIPELINE["company_growth"], PIPELINE["sector_growth"]
-                )),
-                html.Div(
-                    [
-                        _pane(
-                            "pane-treemap", "Sectors → companies", "growth-treemap-chart",
-                            create_growth_figure(PIPELINE["hierarchy"], "treemap", "Total_Volume"),
-                        ),
-                        _pane(
-                            "pane-detail", f"{default_sector} companies", "growth-detail-graph",
-                            create_sector_bar_figure(default_sector, PIPELINE["company_growth"]),
-                        ),
-                    ],
-                    className="growth-split",
-                ),
-            ],
-            id="growth-fullscreen-target",
-            className="growth-fullscreen-target",
-        ),
-    ],
-    fluid=True,
-)
-
-
-# ---------------------------------------------------------------------------
-# register_callbacks()
-# ---------------------------------------------------------------------------
-def register_callbacks():
-
-    @callback(
-        Output("growth-treemap-chart", "figure"),
-        Output("growth-data-store", "data"),
-        Output("kpi-strip-container", "children"),
-        Output("year-range-label", "children"),
-        Input("chart-type-toggle", "value"),
-        Input("size-metric-toggle", "value"),
-        Input("year-range-slider", "value"),
-        Input("sector-filter", "value"),
-        Input("company-filter", "value"),
-    )
-    def update_growth_chart(chart_type, size_metric, year_range, sector, company):
-        # Sector/Company come from the sidebar; the Date filter is skipped
-        # here since this page already has its own year-range control above.
-        start_year, end_year = year_range
-        try:
-            result = run_treemap_pipeline(
-                start_date=f"{start_year}-01-01", end_date=f"{end_year}-12-31", size_metric=size_metric,
-                sector=sector, company=company,
-            )
-        except ValueError:
-            # Too few trading days for this Sector/Company + year-range combo
-            # to compute a reliable CAGR -- keep showing the last valid chart.
-            return dash.no_update, dash.no_update, dash.no_update, dash.no_update
-        fig = create_growth_figure(result["hierarchy"], chart_type, size_metric)
-        kpi_strip = build_kpi_strip(result["company_growth"], result["sector_growth"])
-        return fig, serialize_company_growth(result["company_growth"]), kpi_strip, f"{start_year}–{end_year}"
-
-    @callback(
-        Output("growth-detail-graph", "figure"),
-        Output("pane-detail-title", "children"),
-        Input("growth-treemap-chart", "clickData"),
-        State("growth-data-store", "data"),
-        State("year-range-slider", "value"),
-        prevent_initial_call=True,
-    )
-    def update_detail_panel(click_data, stored_data, year_range):
-        if not click_data:
-            return dash.no_update, dash.no_update
-
-        node_id = click_data["points"][0].get("id", "")
-        if node_id in ("", ROOT_ID):
-            return dash.no_update, dash.no_update
-
-        company_growth = pd.DataFrame(stored_data)
-
-        if "/" in node_id:
-            _, company_name = node_id.split("/", 1)
-            start_year, end_year = year_range
-            raw = load_clean_data()
-            windowed = filter_by_date_range(raw, f"{start_year}-01-01", f"{end_year}-12-31")
-            price_df = windowed[windowed["Company"] == company_name].sort_values("Date")
-            row = company_growth[company_growth["Company"] == company_name].iloc[0]
-
-            fig = create_company_price_figure(company_name, price_df, float(row["CAGR"]))
-            title = f"{company_name} · {float(row['CAGR']):+.1%} CAGR"
->>>>>>> 6b1a46747fde769582d0d639f05459894af4b474
         else:
             top_sharpe = comp_df.loc[comp_df['Sharpe_Ratio'].idxmax()]
             low_sharpe = comp_df.loc[comp_df['Sharpe_Ratio'].idxmin()]
