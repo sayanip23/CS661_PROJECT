@@ -1,5 +1,44 @@
 from dash import html
 import dash_bootstrap_components as dbc
+<<<<<<< HEAD
+=======
+import pandas as pd
+from utils.database import run_query
+
+df = run_query("""
+SELECT
+    Company,
+    Sector,
+    Date
+FROM clean_stock_data
+""")
+
+df["Date"] = pd.to_datetime(df["Date"])
+
+date_options = [
+    {
+        "label": d.strftime("%d-%b-%Y"),
+        "value": d.strftime("%Y-%m-%d")
+    }
+    for d in sorted(df["Date"].unique())
+]
+
+sector_options = [
+    {
+        "label": s,
+        "value": s
+    }
+    for s in sorted(df["Sector"].dropna().unique())
+]
+
+company_options = [
+    {
+        "label": c,
+        "value": c
+    }
+    for c in sorted(df["Company"].dropna().unique())
+]
+>>>>>>> 6b1a46747fde769582d0d639f05459894af4b474
 
 PAGES = [
     ("Home", "/", "bi bi-house-fill"),

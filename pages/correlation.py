@@ -17,7 +17,11 @@ from components.cards import create_stat_card
 from components.narrative import generate_smart_narrative
 from scipy.cluster.hierarchy import dendrogram as scipy_dendrogram
 
+<<<<<<< HEAD
 dash.register_page(__name__, path="/correlation", name="Correlation Analysis")
+=======
+from utils.analytics.correlation import run_correlation_pipeline, load_clean_data
+>>>>>>> 6b1a46747fde769582d0d639f05459894af4b474
 
 # Fetch companies for dropdown
 def _get_all_companies():
@@ -32,6 +36,7 @@ except Exception:
 # ---------------------------------------------------------------------------
 # View Builders (Original Matrix & Dendrogram logic preserved)
 # ---------------------------------------------------------------------------
+<<<<<<< HEAD
 def create_heatmap(clustered_matrix, order, theme="dark"):
     z = clustered_matrix.values
     fig = go.Figure(data=go.Heatmap(
@@ -42,6 +47,87 @@ def create_heatmap(clustered_matrix, order, theme="dark"):
     fig.update_xaxes(type="category", categoryorder="array", categoryarray=order, tickangle=90, tickfont=dict(size=9))
     fig.update_yaxes(type="category", categoryorder="array", categoryarray=order, autorange="reversed", tickfont=dict(size=9))
     fig = apply_shared_layout(fig, theme=theme, dragmode="select", margin=dict(l=140, r=20, t=10, b=140), height=650)
+=======
+PIPELINE = run_correlation_pipeline(n_clusters=5, linkage_method="average")
+
+RAW_DF = PIPELINE["raw_df"]
+ALL_COMPANIES = sorted(RAW_DF["Company"].unique())
+
+DEFAULT_N_CLUSTERS = 5
+DEFAULT_LINKAGE = "average"
+
+# Diverging colorscale: blue (negative) -> white (zero) -> red (positive)
+CORR_COLORSCALE = [
+    [0.0, "rgb(33,102,172)"],
+    [0.25, "rgb(103,169,207)"],
+    [0.5, "rgb(247,247,247)"],
+    [0.75, "rgb(239,138,98)"],
+    [1.0, "rgb(178,24,43)"],
+]
+
+
+# ---------------------------------------------------------------------------
+# _empty_message_figure()
+# ---------------------------------------------------------------------------
+def _empty_message_figure(text):
+    fig = go.Figure()
+    fig.update_layout(
+        height=400,
+        annotations=[dict(
+            text=text, xref="paper", yref="paper", x=0.5, y=0.5,
+            showarrow=False, font=dict(size=14, color="#6c757d"),
+        )],
+    )
+    return fig
+
+
+# ---------------------------------------------------------------------------
+# create_heatmap()
+# ---------------------------------------------------------------------------
+def create_heatmap(clustered_matrix, order):
+    """
+    Builds the Plotly heatmap of the (dendrogram-reordered) correlation
+    matrix. Stocks x stocks, colored blue (negative) -> white (zero) ->
+    red (positive).
+    """
+    z = clustered_matrix.values
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=z,
+            x=order,
+            y=order,
+            colorscale=CORR_COLORSCALE,
+            zmin=-1,
+            zmax=1,
+            zmid=0,
+            colorbar=dict(title="Correlation", thickness=15, x=1.02, len=0.85),
+            hovertemplate="%{y} vs %{x}<br>Correlation: %{z:.2f}<extra></extra>",
+        )
+    )
+
+    fig.update_xaxes(
+        type="category",
+        categoryorder="array",
+        categoryarray=order,
+        tickangle=90,
+        tickfont=dict(size=9),
+    )
+    fig.update_yaxes(
+        type="category",
+        categoryorder="array",
+        categoryarray=order,
+        autorange="reversed",
+        tickfont=dict(size=9),
+    )
+
+    fig.update_layout(
+        dragmode="select",
+        margin=dict(l=140, r=80, t=10, b=40),
+        height=650,
+    )
+
+>>>>>>> 6b1a46747fde769582d0d639f05459894af4b474
     return fig
 
 def create_dendrogram(cluster_result, theme="dark"):
@@ -60,6 +146,7 @@ def create_dendrogram(cluster_result, theme="dark"):
     colors = ThemeManager.get_colors(theme)
     for icoord, dcoord, color in zip(dendro["icoord"], dendro["dcoord"], dendro["color_list"]):
         x = [(v / 10.0) - 0.5 for v in icoord]
+<<<<<<< HEAD
         plot_color = MPL_COLOR_MAP.get(color, color if str(color).startswith("#") else colors["text_secondary"])
         fig.add_trace(go.Scatter(x=x, y=dcoord, mode="lines", line=dict(color=plot_color, width=1.5), hoverinfo="skip", showlegend=False))
 
@@ -67,6 +154,48 @@ def create_dendrogram(cluster_result, theme="dark"):
     fig.update_xaxes(range=[-0.5, n - 0.5], showticklabels=False, showgrid=False, zeroline=False)
     fig.update_yaxes(title="Distance (1 - corr)", showgrid=False, zeroline=False)
     fig = apply_shared_layout(fig, theme=theme, margin=dict(l=140, r=20, t=20, b=0), height=220, showlegend=False)
+=======
+        plot_color = MPL_COLOR_MAP.get(color, color if str(color).startswith("#") else "#333333")
+        fig.add_trace(
+            go.Scatter(
+                x=x,
+                y=dcoord,
+                mode="lines",
+                line=dict(color=plot_color, width=2.5),
+                hoverinfo="skip",
+                showlegend=False,
+            )
+        )
+
+    n = len(dendro["ivl"])
+    fig.update_xaxes(
+        range=[-0.5, n - 0.5],
+        tickmode="array",
+        tickvals=list(range(n)),
+        ticktext=dendro["ivl"],      # company names
+        tickangle=90,
+        tickfont=dict(size=10),
+        showgrid=False,
+        zeroline=False,
+    )
+    fig.update_yaxes(
+        title="Correlation Distance (1 − r)",
+        showgrid=False,
+        zeroline=False,
+    )
+
+    fig.update_layout(
+      title={
+        "text": "Hierarchical Clustering of Stocks",
+        "x": 0.5,
+        "xanchor": "center"
+      },
+      margin=dict(l=170, r=40, t=60, b=170),
+      height=500,
+      showlegend=False,
+   )
+
+>>>>>>> 6b1a46747fde769582d0d639f05459894af4b474
     return fig
 
 def create_network_graph(corr_matrix, comp_to_sec, threshold, theme):
@@ -242,6 +371,7 @@ layout = dbc.Container([
 ], fluid=True, className="py-4 px-4")
 
 
+<<<<<<< HEAD
 # ---------------------------------------------------------------------------
 # Callbacks
 # ---------------------------------------------------------------------------
@@ -261,6 +391,72 @@ layout = dbc.Container([
     Input("corr-network-threshold", "value"),
     Input({"type": "company-selector", "index": "corr-main"}, "value"),
     Input("theme-store", "data")
+=======
+        # ============================================================
+# Hierarchical Clustering (Dendrogram)
+# ============================================================
+
+dbc.Card(
+
+    dbc.CardBody([
+
+        html.H4(
+            "Hierarchical Clustering of Stocks",
+            className="fw-bold mb-3"
+        ),
+
+        html.P(
+            "Stocks that merge at lower heights exhibit more similar daily-return behaviour.",
+            className="text-muted"
+        ),
+
+        dcc.Loading(
+            dcc.Graph(
+                id="correlation-dendrogram",
+                config={"displayModeBar": False}
+            )
+        )
+
+    ]),
+
+    className="shadow-sm mb-4"
+
+),
+
+# ============================================================
+# Clustered Correlation Heatmap
+# ============================================================
+
+dbc.Card(
+
+    dbc.CardBody([
+
+        html.H4(
+            "Clustered Correlation Matrix",
+            className="fw-bold mb-3"
+        ),
+
+        dcc.Loading(
+            dcc.Graph(
+                id="correlation-heatmap",
+                config={"displayModeBar": True}
+            )
+        )
+
+    ]),
+
+    className="shadow-sm mb-4"
+
+),
+
+        html.Hr(),
+        html.H4("Closing Price Comparison", className="fw-bold"),
+        dcc.Loading(
+            dcc.Graph(id="correlation-time-series"),
+        ),
+    ],
+    fluid=True,
+>>>>>>> 6b1a46747fde769582d0d639f05459894af4b474
 )
 def update_workspace(n_clusters, threshold, selected_companies, theme):
     result = run_correlation_pipeline(n_clusters=n_clusters, linkage_method=DEFAULT_LINKAGE_METHOD)
@@ -319,6 +515,7 @@ def update_workspace(n_clusters, threshold, selected_companies, theme):
     return fig_dendro, fig_heat, fig_net, fig_sankey, fig_time, badge, playbook_narrative, div_panel, data, columns, "ag-theme-alpine-dark" if theme == "dark" else "ag-theme-alpine"
 
 
+<<<<<<< HEAD
 # Sync heatmap brush / global context
 @callback(
     Output({"type": "company-selector", "index": "corr-main"}, "value"),
@@ -345,3 +542,74 @@ def sync_dropdown(selected_data, global_state, current_value):
         return list(curr), global_state
         
     return list(curr), no_update
+=======
+# ---------------------------------------------------------------------------
+# register_callbacks()
+# ---------------------------------------------------------------------------
+def register_callbacks():
+
+    @callback(
+        Output("correlation-heatmap", "figure"),
+        Output("correlation-dendrogram", "figure"),
+        Input("n-clusters-slider", "value"),
+        Input("start-date-filter", "value"),
+        Input("end-date-filter", "value"),
+        Input("sector-filter", "value"),
+    )
+    def update_clustering(n_clusters, start_date, end_date, sector):
+        """Re-clusters (sklearn) and recolors the dendrogram (scipy) when the
+        slider or the sidebar's Date/Sector filters change. Leaf order stays
+        stable since it comes from the linkage matrix, not from the chosen
+        number of flat clusters. (The Company filter isn't applied here --
+        correlating a single stock against itself is meaningless.)"""
+        try:
+            result = run_correlation_pipeline(
+                n_clusters=n_clusters, linkage_method=DEFAULT_LINKAGE,
+                start_date=start_date, end_date=end_date, sector=sector,
+            )
+        except ValueError as e:
+            empty = _empty_message_figure(str(e))
+            return empty, empty
+
+        order = result["cluster_result"]["order"]
+
+        heatmap_fig = create_heatmap(result["clustered_matrix"], order)
+        dendrogram_fig = create_dendrogram(result["cluster_result"])
+
+        return heatmap_fig, dendrogram_fig
+
+    @callback(
+        Output("company-selector", "value"),
+        Input("correlation-heatmap", "selectedData"),
+        State("company-selector", "value"),
+        prevent_initial_call=True,
+    )
+    def heatmap_brush_to_dropdown(selected_data, current_value):
+        """Box-selecting (brushing) a block of cells on the heatmap pushes
+        the involved company names into the dropdown, which in turn drives
+        the time-series chart below."""
+        if not selected_data or "points" not in selected_data or not selected_data["points"]:
+            return current_value or []
+
+        companies = set()
+        for point in selected_data["points"]:
+            companies.add(point["x"])
+            companies.add(point["y"])
+
+        return sorted(companies)
+
+    @callback(
+        Output("correlation-time-series", "figure"),
+        Input("company-selector", "value"),
+        Input("start-date-filter", "value"),
+        Input("end-date-filter", "value"),
+    )
+    def update_time_series(selected_companies, start_date, end_date):
+        if not selected_companies:
+            return create_time_series(RAW_DF, [])
+        df = load_clean_data(start_date=start_date, end_date=end_date)
+        return create_time_series(df, selected_companies)
+
+
+register_callbacks()
+>>>>>>> 6b1a46747fde769582d0d639f05459894af4b474

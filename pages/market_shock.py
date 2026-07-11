@@ -205,6 +205,7 @@ layout = dbc.Container([
 
 
 @callback(
+<<<<<<< HEAD
     Output("shock-mag-slider", "value"),
     Output("shock-days-slider", "value"),
     Output("recovery-days-slider", "value"),
@@ -241,6 +242,97 @@ def update_simulation(shock_mag, shock_days, rec_days, target_sector, multiplier
     if summary_df.empty:
         return create_empty_figure("No Data", theme=theme), create_empty_figure("No Data", theme=theme), html.Div("No Data"), [], [], html.Div("No Data"), ""
     selected_company = None
+=======
+    Output("timeline-heatmap", "figure"),
+    Input("z-threshold-slider", "value"),
+    Input("rolling-window-slider", "value"),
+    Input("start-date-filter", "value"),
+    Input("end-date-filter", "value"),
+    Input("sector-filter", "value"),
+    Input("company-filter", "value"),
+    State("timeline-heatmap", "relayoutData"),
+    State("timeline-heatmap", "figure")
+)
+def update_timeline(z_threshold, rolling_window, start_date, end_date, sector, company, relayout_data, current_fig):
+
+    # Query the Database for Market Shocks based on the current slider values
+    market_shocks = get_market_shocks(
+        z_threshold, window=rolling_window,
+        sector=sector, company=company, start_date=start_date, end_date=end_date,
+    )
+    
+    # Plot the timeline bar chart with updated data
+    fig_timeline = px.bar(
+        market_shocks,
+        x="Date", y=["Crash_Severity", "Rally_Severity"], 
+        title=f"Systemic Market Volatility",
+        labels={"value": "Severity Score", "variable": "Shock Type"},
+        color_discrete_map={"Crash_Severity": "#EF553B", "Rally_Severity": "#00CC96"},
+        template="plotly_white"
+    )
+
+    newnames = {'Crash_Severity': 'Market Crash', 'Rally_Severity': 'Market Rally'}
+    fig_timeline.for_each_trace(lambda t: t.update(name = newnames.get(t.name, t.name)))
+
+    fig_timeline.update_layout(
+        clickmode='event+select', 
+        barmode='relative', 
+        yaxis_title="Severity Score",
+        margin=dict(b=50),
+        transition_duration=100
+    )
+    fig_timeline.update_traces(marker_line_width=0)
+    fig_timeline.update_yaxes(fixedrange=True)
+
+    fig_timeline.update_xaxes(
+        rangeslider_visible=False, 
+        rangeselector=dict(
+            buttons=list([
+                dict(count=1, label="1y", step="year", stepmode="backward"),
+                dict(count=5, label="5y", step="year", stepmode="backward"),
+                dict(count=10, label="10y", step="year", stepmode="backward"),
+                dict(step="all", label="Max")
+            ])
+        )
+    )
+    
+    # Preserve Zoom State
+    zoom_range = None
+    if relayout_data and "xaxis.range[0]" in relayout_data and "xaxis.range[1]" in relayout_data:
+        zoom_range = [relayout_data["xaxis.range[0]"], relayout_data["xaxis.range[1]"]]
+    elif relayout_data and ("xaxis.autorange" in relayout_data or "autorange" in relayout_data):
+        zoom_range = None 
+    elif current_fig and "layout" in current_fig and "xaxis" in current_fig["layout"] and "range" in current_fig["layout"]["xaxis"]:
+        zoom_range = current_fig["layout"]["xaxis"]["range"]
+
+    if zoom_range:
+        fig_timeline.update_xaxes(range=zoom_range)
+    else:
+        fig_timeline.update_xaxes(autorange=True)
+    
+    return fig_timeline
+
+
+@callback(
+    Output("beeswarm-plot", "figure"),
+    Output("beeswarm-title", "children"),
+    Input("timeline-heatmap", "clickData"),
+    Input("z-threshold-slider", "value"),
+    Input("rolling-window-slider", "value"),
+    Input("sector-filter", "value"),
+    Input("company-filter", "value"),
+)
+def update_beeswarm_dispersion(clickData, z_threshold, rolling_window, sector, company):
+    if not clickData:
+        empty_fig = px.scatter(title="Waiting for selection...")
+        empty_fig.update_layout(template="plotly_white", xaxis_visible=False, yaxis_visible=False)
+        return empty_fig, "Select a date spike on the timeline above to view stock dispersion."
+
+    target_date = clickData["points"][0]["x"]
+
+    # Query the Database for Cross-Section Data on the selected date
+    cross_section = get_cross_section(target_date, window=rolling_window, sector=sector, company=company)
+>>>>>>> 6b1a46747fde769582d0d639f05459894af4b474
 
     fig_timeline = create_timeline_figure(full_timeline, selected_company, theme)
     fig_resilience = create_resilience_bar_chart(summary_df, theme)
