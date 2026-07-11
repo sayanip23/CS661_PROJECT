@@ -13,12 +13,10 @@ from utils.analytics.risk_return import (
 
 dash.register_page(__name__, path="/risk_return", name="Risk vs Return")
 
+# Load data once when the page loads
 _, feature_matrix = prepare_plot_data()
 
-# ---------- Cluster palette ----------
-# Keyed by the raw KMeans cluster id. The *meaning* behind each color (the
-# legend text) is computed dynamically by label_clusters() since cluster ids
-# are arbitrary and can be reshuffled by KMeans whenever filters change.
+# Colors for each cluster
 CLUSTER_COLORS = {
     "0": "#4C72B0",
     "1": "#C44E52",
@@ -27,10 +25,12 @@ CLUSTER_COLORS = {
 }
 
 
+# Creating scatter plot
 def create_scatter_plot(feature_matrix, highlighted_company=None):
-    cluster_labels = label_clusters(feature_matrix)  # {cluster_id: readable label}
+    cluster_labels = label_clusters(feature_matrix)
     colors = feature_matrix["Cluster"].map(CLUSTER_COLORS)
 
+    # Dim all other points if one is selected
     if highlighted_company is not None:
         opacity = feature_matrix["Company"].apply(
             lambda c: 1.0 if c == highlighted_company else 0.25
@@ -42,9 +42,11 @@ def create_scatter_plot(feature_matrix, highlighted_company=None):
         opacity = 0.9
         line_widths = 0.8
 
+    # Mean lines for the quadrants
     mean_return = feature_matrix["Annual_Return"].mean()
     mean_vol = feature_matrix["Annual_Volatility"].mean()
 
+    # Data for hover text
     hover_df = feature_matrix[["Company", "Sector", "Cluster"]].copy()
     hover_df["Cluster_Label"] = feature_matrix["Cluster"].map(cluster_labels)
 
@@ -71,6 +73,7 @@ def create_scatter_plot(feature_matrix, highlighted_company=None):
         )
     )
 
+    # Add dummy traces just for the legend
     for cluster_id in sorted(cluster_labels.keys(), key=lambda c: int(c)):
         fig.add_trace(go.Scatter(
             x=[None], y=[None], mode="markers",
@@ -79,14 +82,22 @@ def create_scatter_plot(feature_matrix, highlighted_company=None):
             showlegend=True,
         ))
 
+    # Quadrant lines
     fig.add_vline(x=mean_vol, line_dash="dot", line_color="rgba(0,0,0,0.3)", line_width=1)
     fig.add_hline(y=mean_return, line_dash="dot", line_color="rgba(0,0,0,0.3)", line_width=1)
 
     fig.update_layout(
-        margin=dict(l=40, r=20, t=10, b=40),
+        margin=dict(l=40, r=20, t=20, b=90),
         plot_bgcolor="#FAFAFA",
         paper_bgcolor="white",
-        legend_title_text="Risk Profile",
+        legend=dict(
+            title="Risk Profile",
+            orientation="h",
+            yanchor="top",
+            y=-0.15,
+            xanchor="center",
+            x=0.5,
+        ),
         font=dict(family="Inter, sans-serif", size=13),
         xaxis_title="Annual Volatility (Risk)",
         yaxis_title="Annual Return",
@@ -98,9 +109,11 @@ def create_scatter_plot(feature_matrix, highlighted_company=None):
     return fig
 
 
+# Creating the price/return chart on the bottom
 def create_price_chart(company_df, company, benchmark_df=None):
     fig = go.Figure()
 
+    # Line for the selected company
     if company_df is not None and not company_df.empty:
         company_df = company_df.copy()
         if "Daily_Return" not in company_df.columns:
@@ -109,8 +122,7 @@ def create_price_chart(company_df, company, benchmark_df=None):
         company_df["Cumulative_Return"] = (
             (1 + company_df["Daily_Return"].fillna(0)).cumprod() - 1
         )
-        # A more intuitive companion figure alongside the %: what ₹100
-        # invested on day one would be worth today.
+        # what 100 rs invested on day 1 would be worth now
         company_df["Indexed_Value"] = 100 * (1 + company_df["Cumulative_Return"])
 
         fig.add_trace(go.Scatter(
@@ -125,6 +137,7 @@ def create_price_chart(company_df, company, benchmark_df=None):
             ),
         ))
 
+        # label showing the final return at the end of the line
         final_ret = company_df["Cumulative_Return"].iloc[-1]
         final_val = company_df["Indexed_Value"].iloc[-1]
         fig.add_annotation(
@@ -135,6 +148,7 @@ def create_price_chart(company_df, company, benchmark_df=None):
             bgcolor="rgba(255,255,255,0.85)",
         )
 
+    # Benchmark line (Nifty 50 average)
     if benchmark_df is not None and not benchmark_df.empty:
         benchmark_df = benchmark_df.copy()
         benchmark_df["Indexed_Value"] = 100 * (1 + benchmark_df["Cumulative_Return"])
@@ -178,6 +192,7 @@ def create_price_chart(company_df, company, benchmark_df=None):
     return fig
 
 
+# Page layout
 layout = dbc.Container([
     html.H2(
         "Risk Return Analysis",
@@ -195,9 +210,11 @@ layout = dbc.Container([
         }
     ),
 
+    # Stores for keeping track of selected/highlighted company
     dcc.Store(id="selected-company-store", data=None),
     dcc.Store(id="highlight-company-store", data=None),
 
+    # Reset button
     dbc.Row([
         dbc.Col(
             dbc.Button(
@@ -211,7 +228,7 @@ layout = dbc.Container([
         ),
     ], className="mb-3"),
 
-    # ---------------- Scatter Plot ----------------
+    # Scatter plot card
     dbc.Row([
         dbc.Col(
             dbc.Card([
@@ -227,10 +244,10 @@ layout = dbc.Container([
                             "displayModeBar": True,
                             "displaylogo": False,
                             "modeBarButtonsToRemove": [
-                            "select2d",
-                            "lasso2d",
+                                "select2d",
+                                "lasso2d",
                             ],
-                       },
+                        },
                         style={"height": "600px"},
                     )
                 ),
@@ -239,7 +256,7 @@ layout = dbc.Container([
         ),
     ], className="g-3 mb-4"),
 
-    # ---------------- Cumulative Return Plot ----------------
+    # Cumulative return chart card
     dbc.Row([
         dbc.Col(
             dbc.Card([
@@ -262,6 +279,8 @@ layout = dbc.Container([
 
 ], fluid=True, className="px-4 py-3")
 
+
+# Updates which company is selected (for the bottom chart)
 @callback(
     Output("selected-company-store", "data"),
     Input("risk-return-scatter", "clickData"),
@@ -282,26 +301,24 @@ def update_selected_company(
     current_company,
 ):
     trigger = ctx.triggered_id
+
+    # Reset button pressed
     if trigger == "reset-risk-return-btn":
         return None
-    
 
+    # Company picked from the filter dropdown
     if trigger == "company-filter":
-        # Includes the case where the user clears the filter (company_filter
-        # is None/""); we clear the selection rather than guessing a company.
         return company_filter or None
 
+    # Company clicked on the scatter plot
     if trigger == "risk-return-scatter":
         if click_data is None:
             return dash.no_update
         return click_data["points"][0]["customdata"][0]
 
+    # Other filters changed, check if current company still valid
     if trigger in ("sector-filter", "start-date-filter", "end-date-filter"):
         if current_company is None:
-            # Nothing was selected before the filter changed — keep it that
-            # way instead of auto-picking a company (previously this fell
-            # through to sorted(available)[0], which always defaulted to
-            # ADANIPORTS alphabetically).
             return dash.no_update
 
         available = load_data(
@@ -310,13 +327,12 @@ def update_selected_company(
 
         if current_company in available:
             return dash.no_update
-        # The previously selected company no longer matches the filters —
-        # clear the selection instead of silently swapping to a new one.
         return None
 
     return dash.no_update
 
 
+# Updates which company is highlighted on the scatter plot
 @callback(
     Output("highlight-company-store", "data"),
     Input("risk-return-scatter", "clickData"),
@@ -327,15 +343,14 @@ def update_selected_company(
 def update_highlight(click_data, relayout_data, reset_clicks):
     trigger = ctx.triggered_id
 
-    # Reset button clears highlight
     if trigger == "reset-risk-return-btn":
         return None
 
-    # Reset axes (double click or toolbar reset)
     if trigger == "risk-return-scatter":
         if click_data:
             return click_data["points"][0]["customdata"][0]
 
+    # Double click resets the zoom, use that to also clear highlight
     if trigger == "risk-return-scatter.relayoutData":
         if relayout_data and (
             "xaxis.autorange" in relayout_data or
@@ -345,6 +360,8 @@ def update_highlight(click_data, relayout_data, reset_clicks):
 
     return dash.no_update
 
+
+# Redraws the scatter plot whenever filters or highlight changes
 @callback(
     Output("risk-return-scatter", "figure"),
     Input("highlight-company-store", "data"),
@@ -363,6 +380,7 @@ def update_scatter_highlight(highlighted_company, start_date, end_date, sector, 
     return create_scatter_plot(fm, highlighted_company)
 
 
+# Redraws the bottom price chart whenever the selected company changes
 @callback(
     Output("risk-return-price-chart", "figure"),
     Output("price-chart-title", "children"),
@@ -371,9 +389,8 @@ def update_scatter_highlight(highlighted_company, start_date, end_date, sector, 
     Input("end-date-filter", "value"),
 )
 def update_price_chart(company, start_date, end_date):
+    # No company selected yet, just show the market average
     if not company:
-        # Nothing selected yet — show the market benchmark on its own
-        # instead of defaulting to an arbitrary company.
         benchmark_df = compute_benchmark_cumulative_return(
             start_date=start_date, end_date=end_date
         )
@@ -382,6 +399,7 @@ def update_price_chart(company, start_date, end_date):
 
     company_df = load_company_prices(company, start_date=start_date, end_date=end_date)
 
+    # Align benchmark to start from the same date as the company data
     benchmark_df = None
     if not company_df.empty:
         aligned_start = company_df["Date"].min()
