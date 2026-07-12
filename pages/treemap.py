@@ -102,6 +102,31 @@ def create_sector_bar_figure(sector_name: str, company_growth: pd.DataFrame) -> 
     return fig
 
 
+def create_all_sector_comparison_figure(company_growth: pd.DataFrame) -> go.Figure:
+    sector_growth = (
+        company_growth.groupby("Sector", as_index=False)
+        .agg(CAGR=("CAGR", "mean"), Num_Companies=("Company", "nunique"))
+        .sort_values("CAGR")
+    )
+
+    fig = go.Figure(go.Bar(
+        x=sector_growth["CAGR"],
+        y=sector_growth["Sector"],
+        orientation="h",
+        marker=dict(color=sector_growth["CAGR"], colorscale=GROWTH_COLORSCALE),
+        text=[f"{v:+.0%}" for v in sector_growth["CAGR"]],
+        textposition="outside",
+        customdata=sector_growth[["Num_Companies"]],
+        hovertemplate="%{y} · %{x:+.1%}<br>%{customdata[0]} companies<extra></extra>",
+    ))
+    fig.update_layout(
+        xaxis_tickformat=".0%",
+        margin=dict(l=110, r=30, t=10, b=20),
+        autosize=True,
+    )
+    return fig
+
+
 # ---------------------------------------------------------------------------
 # create_company_price_figure()
 # ---------------------------------------------------------------------------
@@ -250,8 +275,8 @@ layout = dbc.Container(
                             create_growth_figure(PIPELINE["hierarchy"], "treemap", "Total_Volume"),
                         ),
                         _pane(
-                            "pane-detail", f"{default_sector} companies", "growth-detail-graph",
-                            create_sector_bar_figure(default_sector, PIPELINE["company_growth"]),
+                            "pane-detail", "All sector comparison", "growth-detail-graph",
+                            create_all_sector_comparison_figure(PIPELINE["company_growth"]),
                         ),
                     ],
                     className="growth-split",
@@ -307,14 +332,14 @@ def register_callbacks():
         prevent_initial_call=True,
     )
     def update_detail_panel(click_data, stored_data, year_range):
+        company_growth = pd.DataFrame(stored_data)
+
         if not click_data:
-            return dash.no_update, dash.no_update
+            return create_all_sector_comparison_figure(company_growth), "All sector comparison"
 
         node_id = click_data["points"][0].get("id", "")
         if node_id in ("", ROOT_ID):
-            return dash.no_update, dash.no_update
-
-        company_growth = pd.DataFrame(stored_data)
+            return create_all_sector_comparison_figure(company_growth), "All sector comparison"
 
         if "/" in node_id:
             _, company_name = node_id.split("/", 1)
