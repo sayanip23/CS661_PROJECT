@@ -9,10 +9,9 @@ and provides read-only connections for safe concurrent Dash callbacks.
 import os
 import duckdb
 import pandas as pd
-from utils.config import DB_PATH, CSV_PATH
-from utils.logger import get_logger
 
-logger = get_logger(__name__)
+DB_PATH = "data/processed/stocks.duckdb"
+CSV_PATH = "data/processed/clean_stock_data.csv"
 
 
 def init_db():
@@ -32,9 +31,8 @@ def init_db():
         table_names = [t[0] for t in tables]
 
         if "clean_stock_data" not in table_names:
-            logger.info("Database table missing! Auto-importing CSV into DuckDB...")
+            print("Database table missing! Auto-importing CSV into DuckDB...")
             if not os.path.exists(CSV_PATH):
-                logger.error(f"Cannot initialize database: Missing source file '{CSV_PATH}'.")
                 raise FileNotFoundError(
                     f"Cannot initialize database: Missing source file '{CSV_PATH}'."
                 )
@@ -43,10 +41,7 @@ def init_db():
                 CREATE TABLE clean_stock_data AS 
                 SELECT * FROM '{CSV_PATH}';
             """)
-            logger.info("DuckDB database successfully built and ready!")
-    except Exception as e:
-        logger.error(f"Failed to initialize database: {e}")
-        raise
+            print("DuckDB database successfully built and ready!")
     finally:
         con.close()
 
@@ -61,32 +56,21 @@ def get_connection() -> duckdb.DuckDBPyConnection:
     Uses read_only=True to allow concurrent read access across multiple Dash 
     callbacks without throwing file-lock exceptions.
     """
-    try:
-        return duckdb.connect(DB_PATH, read_only=True)
-    except Exception as e:
-        logger.error(f"Failed to connect to DuckDB: {e}")
-        raise
+    return duckdb.connect(DB_PATH, read_only=True)
 
 
 def run_query(query: str, params: tuple = None) -> pd.DataFrame:
     """
     Executes a SQL query against the DuckDB database and returns a Pandas DataFrame.
     Automatically closes the connection when execution completes.
-    Returns an empty DataFrame if the query fails.
     """
-    try:
-        con = get_connection()
-    except Exception:
-        return pd.DataFrame()
-        
+    con = get_connection()
     try:
         if params is not None:
             df = con.execute(query, params).df()
         else:
             df = con.execute(query).df()
-        return df
-    except Exception as e:
-        logger.error(f"Query execution failed: {e}\nQuery: {query}")
-        return pd.DataFrame()
     finally:
         con.close()
+
+    return df
