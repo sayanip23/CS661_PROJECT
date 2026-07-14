@@ -48,16 +48,24 @@ The codebase is organized around one end-to-end flow:
 
 ## Key Features (Implemented)
 
-Based on the current code and file structure, the project includes these implemented modules/pages:
+Based on the current code and recent commits, the project includes these implemented modules/pages:
 
 - **Correlation Analysis** (`pages/correlation.py`)
-- **Risk vs Return Analysis** (`pages/risk_return.py`)
+- **Risk vs Return Analysis** (`pages/risk_return.py`) with benchmark comparison, clustering labels, reset controls, and highlight fixes.
 - **Market Shock Analysis** (`pages/market_shock.py`)
 - **Sector Rotation Analysis** (`pages/sector_rotation.py`)
-- **Treemap-based Market View** (`pages/treemap.py`)
+- **Sector Growth (Treemap page)** (`pages/treemap.py`) with all-sector comparison defaults and volume-weighted sector CAGR logic.
 - **Landing/Home page** (`pages/home.py`)
 
-> Note: The previous README referenced a few generic/promotional items (e.g., badges/theme claims/docs links) that are not consistently represented in this repository. This README reflects only what is present in code/files.
+> Recent UI update: sidebar navigation label has been renamed from **Treemap** to **Sector Growth**.
+
+## Recent Changes Reflected (July 2026)
+
+- **2026-07-14**: Sidebar label renamed from Treemap to Sector Growth.
+- **2026-07-14**: README rewritten to align with actual implemented structure.
+- **2026-07-14**: All-sector comparison chart updated to use volume-weighted sector CAGR.
+- **2026-07-12**: Treemap second panel defaulted to all-sector comparison chart.
+- **2026-07-11**: Risk/Return page enhanced with reset button, benchmark comparison, cluster labels, and highlight fixes.
 
 ## Technology Stack
 
