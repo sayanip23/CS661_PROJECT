@@ -15,6 +15,7 @@ from dash import html, dcc, Input, Output, State, callback, clientside_callback
 import dash_bootstrap_components as dbc
 import pandas as pd
 import plotly.graph_objects as go
+import numpy as np
 
 from utils.analytics.treemap import (
     run_treemap_pipeline,
@@ -103,10 +104,20 @@ def create_sector_bar_figure(sector_name: str, company_growth: pd.DataFrame) -> 
 
 
 def create_all_sector_comparison_figure(company_growth: pd.DataFrame) -> go.Figure:
+    def weighted_cagr(g: pd.DataFrame) -> float:
+        weights = g["Total_Volume"]
+        if weights.sum() == 0:
+            return g["CAGR"].mean()
+        return np.average(g["CAGR"], weights=weights)
+
     sector_growth = (
         company_growth.groupby("Sector", as_index=False)
-        .agg(CAGR=("CAGR", "mean"), Num_Companies=("Company", "nunique"))
+        .apply(lambda g: pd.Series({
+            "CAGR": weighted_cagr(g),
+            "Num_Companies": g["Company"].nunique(),
+        }))
         .sort_values("CAGR")
+        .reset_index(drop=True)
     )
 
     fig = go.Figure(go.Bar(
