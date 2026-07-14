@@ -7,7 +7,7 @@ Layout:
     - Top:    Dendrogram (column order matches the heatmap below it)
     - Middle: Plotly heatmap of clustered stock-return correlations
               (blue = negative, white = zero, red = positive)
-    - Controls: number-of-clusters slider, company dropdown
+    - Controls: company dropdown
     - Bottom: Multi-line time series of closing prices for whichever
               stocks are selected (via box-select/"brushing" on the
               heatmap, or via the dropdown)
@@ -112,6 +112,34 @@ def create_heatmap(clustered_matrix, order):
 
 
 # ---------------------------------------------------------------------------
+# _color_threshold_for_n_clusters()
+# ---------------------------------------------------------------------------
+def _color_threshold_for_n_clusters(linkage_matrix, n_clusters):
+    """
+    Finds the linkage-distance cut height that splits the tree into exactly
+    `n_clusters` groups, so the dendrogram's coloring reflects the actual
+    number of clusters sklearn settled on instead of a fixed 0.7*max
+    heuristic that ignores it.
+    """
+    merge_heights = linkage_matrix[:, 2]
+    n_leaves = len(merge_heights) + 1
+    n_clusters = max(1, min(n_clusters, n_leaves))
+
+    # Merges below the cut are the ones that collapse leaves into clusters;
+    # cutting after this many merges leaves exactly n_clusters groups.
+    n_merges_below_cut = n_leaves - n_clusters
+
+    if n_merges_below_cut <= 0:
+        return merge_heights[0] / 2 if len(merge_heights) else 0.0
+    if n_merges_below_cut >= len(merge_heights):
+        return merge_heights[-1] * 1.0001 + 1e-9
+
+    low = merge_heights[n_merges_below_cut - 1]
+    high = merge_heights[n_merges_below_cut]
+    return (low + high) / 2
+
+
+# ---------------------------------------------------------------------------
 # create_dendrogram()
 # ---------------------------------------------------------------------------
 def create_dendrogram(cluster_result):
@@ -123,11 +151,16 @@ def create_dendrogram(cluster_result):
     linkage_matrix = cluster_result["linkage_matrix"]
     companies = cluster_result["companies"]
 
+    # Use the actual (post-clamp) number of clusters sklearn settled on, so
+    # the coloring always matches the pipeline's fixed cluster count.
+    n_clusters = len(set(cluster_result["labels"]))
+    color_threshold = _color_threshold_for_n_clusters(linkage_matrix, n_clusters)
+
     dendro = scipy_dendrogram(
         linkage_matrix,
         labels=companies,
         no_plot=True,
-        color_threshold=0.7 * max(linkage_matrix[:, 2]),
+        color_threshold=color_threshold,
     )
 
     fig = go.Figure()
@@ -259,21 +292,7 @@ layout = dbc.Container(
             [
                 dbc.Col(
                     [
-                        html.Label("Number of Clusters", className="fw-bold"),
-                        dcc.Slider(
-                            id="n-clusters-slider",
-                            min=2,
-                            max=10,
-                            step=1,
-                            value=DEFAULT_N_CLUSTERS,
-                            marks={i: str(i) for i in range(2, 11)},
-                        ),
-                    ],
-                    md=6,
-                ),
-                dbc.Col(
-                    [
-                        html.Label("Or pick companies directly", className="fw-bold"),
+                        html.Label("Pick companies to compare", className="fw-bold"),
                         dcc.Dropdown(
                             id="company-selector",
                             options=[{"label": c, "value": c} for c in ALL_COMPANIES],
@@ -282,7 +301,7 @@ layout = dbc.Container(
                             placeholder="Select companies to plot...",
                         ),
                     ],
-                    md=6,
+                    md=12,
                 ),
             ],
             className="mb-3",
@@ -363,20 +382,19 @@ def register_callbacks():
     @callback(
         Output("correlation-heatmap", "figure"),
         Output("correlation-dendrogram", "figure"),
-        Input("n-clusters-slider", "value"),
         Input("start-date-filter", "value"),
         Input("end-date-filter", "value"),
         Input("sector-filter", "value"),
     )
-    def update_clustering(n_clusters, start_date, end_date, sector):
+    def update_clustering(start_date, end_date, sector):
         """Re-clusters (sklearn) and recolors the dendrogram (scipy) when the
-        slider or the sidebar's Date/Sector filters change. Leaf order stays
-        stable since it comes from the linkage matrix, not from the chosen
-        number of flat clusters. (The Company filter isn't applied here --
-        correlating a single stock against itself is meaningless.)"""
+        sidebar's Date/Sector filters change. Leaf order stays stable since it
+        comes from the linkage matrix, not from the fixed cluster count.
+        (The Company filter isn't applied here -- correlating a single stock
+        against itself is meaningless.)"""
         try:
             result = run_correlation_pipeline(
-                n_clusters=n_clusters, linkage_method=DEFAULT_LINKAGE,
+                n_clusters=DEFAULT_N_CLUSTERS, linkage_method=DEFAULT_LINKAGE,
                 start_date=start_date, end_date=end_date, sector=sector,
             )
         except ValueError as e:
