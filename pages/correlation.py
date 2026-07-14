@@ -112,34 +112,6 @@ def create_heatmap(clustered_matrix, order):
 
 
 # ---------------------------------------------------------------------------
-# _color_threshold_for_n_clusters()
-# ---------------------------------------------------------------------------
-def _color_threshold_for_n_clusters(linkage_matrix, n_clusters):
-    """
-    Finds the linkage-distance cut height that splits the tree into exactly
-    `n_clusters` groups, so the dendrogram's coloring reflects the actual
-    number of clusters sklearn settled on instead of a fixed 0.7*max
-    heuristic that ignores it.
-    """
-    merge_heights = linkage_matrix[:, 2]
-    n_leaves = len(merge_heights) + 1
-    n_clusters = max(1, min(n_clusters, n_leaves))
-
-    # Merges below the cut are the ones that collapse leaves into clusters;
-    # cutting after this many merges leaves exactly n_clusters groups.
-    n_merges_below_cut = n_leaves - n_clusters
-
-    if n_merges_below_cut <= 0:
-        return merge_heights[0] / 2 if len(merge_heights) else 0.0
-    if n_merges_below_cut >= len(merge_heights):
-        return merge_heights[-1] * 1.0001 + 1e-9
-
-    low = merge_heights[n_merges_below_cut - 1]
-    high = merge_heights[n_merges_below_cut]
-    return (low + high) / 2
-
-
-# ---------------------------------------------------------------------------
 # create_dendrogram()
 # ---------------------------------------------------------------------------
 def create_dendrogram(cluster_result):
@@ -151,28 +123,26 @@ def create_dendrogram(cluster_result):
     linkage_matrix = cluster_result["linkage_matrix"]
     companies = cluster_result["companies"]
 
-    # Use the actual (post-clamp) number of clusters sklearn settled on, so
-    # the coloring always matches the pipeline's fixed cluster count.
-    n_clusters = len(set(cluster_result["labels"]))
-    color_threshold = _color_threshold_for_n_clusters(linkage_matrix, n_clusters)
-
     dendro = scipy_dendrogram(
         linkage_matrix,
         labels=companies,
         no_plot=True,
-        color_threshold=color_threshold,
+        color_threshold=0.7 * max(linkage_matrix[:, 2]),
     )
 
     fig = go.Figure()
 
     # scipy returns matplotlib-style short codes ('C0', 'C1', ...) which are
-    # not valid Plotly/CSS colors -> map them to actual hex values.
+    # not valid Plotly/CSS colors -> map them to actual hex values. Uses a
+    # colorblind-safe qualitative palette (ColorBrewer Dark2) instead of
+    # matplotlib's default tab10 cycle, so it doesn't look like a chart
+    # pasted in from a different app.
     MPL_COLOR_MAP = {
-        "C0": "#1f77b4", "C1": "#ff7f0e", "C2": "#2ca02c", "C3": "#d62728",
-        "C4": "#9467bd", "C5": "#8c564b", "C6": "#e377c2", "C7": "#7f7f7f",
-        "C8": "#bcbd22", "C9": "#17becf",
-        "b": "#1f77b4", "g": "#2ca02c", "r": "#d62728", "c": "#17becf",
-        "m": "#9467bd", "y": "#bcbd22", "k": "#333333",
+        "C0": "#1b9e77", "C1": "#d95f02", "C2": "#7570b3", "C3": "#e7298a",
+        "C4": "#66a61e", "C5": "#e6ab02", "C6": "#a6761d", "C7": "#666666",
+        "C8": "#1b9e77", "C9": "#d95f02",
+        "b": "#1b9e77", "g": "#7570b3", "r": "#e7298a", "c": "#66a61e",
+        "m": "#e6ab02", "y": "#a6761d", "k": "#333333",
     }
 
     # scipy places leaves at x = 5, 15, 25, ... -> rescale to 0, 1, 2, ...
