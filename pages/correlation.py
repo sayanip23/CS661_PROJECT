@@ -128,6 +128,11 @@ def create_dendrogram(cluster_result):
         labels=companies,
         no_plot=True,
         color_threshold=0.7 * max(linkage_matrix[:, 2]),
+        # Without this, scipy's default backbone color for links ABOVE the
+        # cut (the connectors joining separate clusters together) is 'C0' --
+        # the exact same code as a real cluster below the cut, making that
+        # cluster visually indistinguishable from plain tree structure.
+        above_threshold_color="#B0B7C3",
     )
 
     fig = go.Figure()
