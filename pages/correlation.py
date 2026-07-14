@@ -13,11 +13,13 @@ Layout:
               heatmap, or via the dropdown)
 """
 
+from collections import Counter
+
 import dash
 from dash import html, dcc, Input, Output, State, callback, ctx
 import dash_bootstrap_components as dbc
 import plotly.graph_objects as go
-from scipy.cluster.hierarchy import dendrogram as scipy_dendrogram
+from scipy.cluster.hierarchy import dendrogram as scipy_dendrogram, fcluster
 
 from utils.analytics.correlation import run_correlation_pipeline, load_clean_data
 
@@ -36,6 +38,18 @@ ALL_COMPANIES = sorted(RAW_DF["Company"].unique())
 
 DEFAULT_N_CLUSTERS = 5
 DEFAULT_LINKAGE = "average"
+
+# Colorblind-safe qualitative palette (ColorBrewer Dark2, extended with two
+# more distinct hues) for tagging genuinely distinct correlation clusters in
+# the dendrogram. Links that don't belong to any single multi-stock cluster
+# (singleton stocks, or the backbone connecting separate clusters together)
+# get this neutral gray instead.
+DENDROGRAM_NEUTRAL_COLOR = "#B0B7C3"
+DENDROGRAM_PALETTE = [
+    "#1b9e77", "#d95f02", "#7570b3", "#e7298a",
+    "#66a61e", "#e6ab02", "#a6761d", "#666666",
+    "#08519c", "#54278f",
+]
 
 # Diverging colorscale: blue (negative) -> white (zero) -> red (positive)
 CORR_COLORSCALE = [
@@ -112,6 +126,49 @@ def create_heatmap(clustered_matrix, order):
 
 
 # ---------------------------------------------------------------------------
+# _build_cluster_link_color_func()
+# ---------------------------------------------------------------------------
+def _build_cluster_link_color_func(linkage_matrix, threshold):
+    """
+    Colors each dendrogram link by which single, genuine correlation cluster
+    (computed via `fcluster` at this same cut height) all of its descendant
+    leaves belong to.
+
+    This intentionally bypasses scipy's own automatic color-tag cycling:
+    scipy only has ~10 built-in tag names ('C0'..'C9'), and once there are
+    more distinct clusters below the cut than that, it silently reuses a tag
+    -- making two completely unrelated stock clusters render as the exact
+    same color. Computing membership ourselves guarantees a 1-to-1 mapping
+    between real clusters and colors, however many there are.
+    """
+    n_leaves = linkage_matrix.shape[0] + 1
+    flat = fcluster(linkage_matrix, t=threshold, criterion="distance")
+
+    # Cluster-id set covered by each node's descendant leaves (leaves first,
+    # then internal merge nodes in linkage-matrix order).
+    node_clusters = {i: {int(flat[i])} for i in range(n_leaves)}
+    for i, (a, b, _dist, _cnt) in enumerate(linkage_matrix):
+        node_clusters[n_leaves + i] = node_clusters[int(a)] | node_clusters[int(b)]
+
+    sizes = Counter(flat)
+    real_cluster_ids = sorted(cid for cid, sz in sizes.items() if sz > 1)
+    color_for_cluster = {
+        cid: DENDROGRAM_PALETTE[idx % len(DENDROGRAM_PALETTE)]
+        for idx, cid in enumerate(real_cluster_ids)
+    }
+
+    def link_color_func(node_id):
+        clusters_below = node_clusters[node_id]
+        if len(clusters_below) == 1:
+            only_cluster = next(iter(clusters_below))
+            if only_cluster in color_for_cluster:
+                return color_for_cluster[only_cluster]
+        return DENDROGRAM_NEUTRAL_COLOR
+
+    return link_color_func
+
+
+# ---------------------------------------------------------------------------
 # create_dendrogram()
 # ---------------------------------------------------------------------------
 def create_dendrogram(cluster_result):
@@ -123,44 +180,30 @@ def create_dendrogram(cluster_result):
     linkage_matrix = cluster_result["linkage_matrix"]
     companies = cluster_result["companies"]
 
+    threshold = 0.7 * max(linkage_matrix[:, 2])
+    link_color_func = _build_cluster_link_color_func(linkage_matrix, threshold)
+
     dendro = scipy_dendrogram(
         linkage_matrix,
         labels=companies,
         no_plot=True,
-        color_threshold=0.7 * max(linkage_matrix[:, 2]),
-        # Without this, scipy's default backbone color for links ABOVE the
-        # cut (the connectors joining separate clusters together) is 'C0' --
-        # the exact same code as a real cluster below the cut, making that
-        # cluster visually indistinguishable from plain tree structure.
-        above_threshold_color="#B0B7C3",
+        link_color_func=link_color_func,
     )
 
     fig = go.Figure()
 
-    # scipy returns matplotlib-style short codes ('C0', 'C1', ...) which are
-    # not valid Plotly/CSS colors -> map them to actual hex values. Uses a
-    # colorblind-safe qualitative palette (ColorBrewer Dark2) instead of
-    # matplotlib's default tab10 cycle, so it doesn't look like a chart
-    # pasted in from a different app.
-    MPL_COLOR_MAP = {
-        "C0": "#1b9e77", "C1": "#d95f02", "C2": "#7570b3", "C3": "#e7298a",
-        "C4": "#66a61e", "C5": "#e6ab02", "C6": "#a6761d", "C7": "#666666",
-        "C8": "#08519c", "C9": "#54278f",
-        "b": "#1b9e77", "g": "#7570b3", "r": "#e7298a", "c": "#66a61e",
-        "m": "#e6ab02", "y": "#a6761d", "k": "#333333",
-    }
-
     # scipy places leaves at x = 5, 15, 25, ... -> rescale to 0, 1, 2, ...
-    # so it lines up with the heatmap's categorical x positions.
+    # so it lines up with the heatmap's categorical x positions. color_list
+    # entries are already final hex colors here (from link_color_func above),
+    # not matplotlib-style codes, so no translation step is needed.
     for icoord, dcoord, color in zip(dendro["icoord"], dendro["dcoord"], dendro["color_list"]):
         x = [(v / 10.0) - 0.5 for v in icoord]
-        plot_color = MPL_COLOR_MAP.get(color, color if str(color).startswith("#") else "#333333")
         fig.add_trace(
             go.Scatter(
                 x=x,
                 y=dcoord,
                 mode="lines",
-                line=dict(color=plot_color, width=2.5),
+                line=dict(color=color, width=2.5),
                 hoverinfo="skip",
                 showlegend=False,
             )
