@@ -47,7 +47,7 @@ PAGES = [
     ("Risk vs Return", "/risk_return", "bi bi-bar-chart-fill"),
     ("Market Shock", "/market_shock", "bi bi-lightning-fill"),
     ("Sector Rotation", "/sector_rotation", "bi bi-arrow-repeat"),
-    ("Treemap", "/treemap", "bi bi-diagram-3-fill"),
+    ("Sector Growth", "/treemap", "bi bi-diagram-3-fill"),
 ]
 
 
