@@ -18,7 +18,7 @@ app = dash.Dash(
         dbc.icons.BOOTSTRAP
     ],
 )
-
+server = app.server
 app.title = "NIFTY-50 Visual Analytics"
 
 
